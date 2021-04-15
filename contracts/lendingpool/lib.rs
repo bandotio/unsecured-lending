@@ -9,6 +9,7 @@ mod lendingpool {
     use crate::types::*;
     use ierc20::IERC20;
 
+    use ink_prelude::string::String;
     use ink_env::call::FromAccountId;
     use ink_prelude::{vec, vec::Vec};
     use ink_storage::collections::HashMap as StorageHashMap;
@@ -100,6 +101,7 @@ mod lendingpool {
         users_data: StorageHashMap<AccountId, UserReserveData>,
         //store the delegateallowance
         delegate_allowance: StorageHashMap<(AccountId, AccountId), Balance>,
+        users_kyc_data: StorageHashMap<AccountId, UserKycData>,
     }
 
     impl Lendingpool {
@@ -114,6 +116,7 @@ mod lendingpool {
                 },
                 users_data: StorageHashMap::new(),
                 delegate_allowance: StorageHashMap::new(),
+                users_kyc_data: StorageHashMap::new(),
             }
         }
 
@@ -428,6 +431,24 @@ mod lendingpool {
                 }
             }
             delegates
+        }
+
+        #[ink(message)]
+        pub fn set_kyc_data(&mut self, name: Option<String>, email: Option<String>) {
+            let user = self.env().caller();
+            let entry = self.users_kyc_data.entry(user);
+            let kyc_data = entry.or_insert(Default::default());
+            if let Some(user_name) = name {
+                kyc_data.name = user_name;
+            }
+            if let Some(user_email) = email {
+                kyc_data.email = user_email;
+            }         
+        }
+
+        #[ink(message)]
+        pub fn get_kyc_data(&self, user: AccountId) -> Option<UserKycData> {
+            self.users_kyc_data.get(&user).cloned()
         }
     }
 }

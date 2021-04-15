@@ -3,6 +3,7 @@ mod errors;
 
 pub use errors::*;
 
+use ink_prelude::string::String;
 use ink_env::AccountId;
 use ink_storage::traits::{PackedLayout, SpreadLayout};
 
@@ -38,4 +39,16 @@ pub struct UserReserveData {
     pub last_update_timestamp: u64,
     // amount borrowed by the user.
     pub borrow_balance: u128,
+}
+
+#[derive(
+    Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout,
+)]
+#[cfg_attr(
+    feature = "std",
+    derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout)
+)]
+pub struct UserKycData {
+    pub name: String,
+    pub email: String,
 }
