@@ -381,7 +381,7 @@ mod lendingpool {
                 * interval as u128
                 * self.reserve.stable_borrow_rate
                 / (100 * 365 * 24 * 3600 * 1000);
-            reserve_data_sender.borrow_balance += amount;
+            reserve_data_sender.borrow_balance -= amount;
             reserve_data_sender.last_update_timestamp = Self::env().block_timestamp();
 
             if amount <= reserve_data_sender.cumulated_stable_borrow_interest {
