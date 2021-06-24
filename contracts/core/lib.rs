@@ -456,4 +456,29 @@ mod core {
         // is_active
     }
 
+    fn _transfer(from:AccountId, to:AccountId, token:AccountId, amount:u128, validate:bool){
+        //用mapping到特定reserve, token用在这里
+        // let index = reserve.get_normalized_income();
+        // let from_balance_before = balanceOf(from) * index;
+        // let to_balance_before = balanceOf(to) * index;
+        // erc20._transfer(from, to, amount/index);
+        // if validate {
+        //     self.finalize_transfer(token, from, to, amount, from_balance_before, to_balance_before)
+        // }
+        // event
+    }
+
+    fn finalize_transfer(token:AccountId, from:AccountId, to:AccountId, amount:u128,from_balance_before:u128, to_balance_before:u128){
+        //Only callable by the overlying aToken of the `asset`
+        //core.validate_transfer()
+        // if from != to {
+        //     if from_balance_before - amount ==0 {
+        //         set_using_as_collateral(reserveid, false)
+        //     }
+        // }
+        // if to_balance_before ==0 & amount != 0 {
+        //     set_using_as_collateral(reserveid, true)
+        // }
+    }
+
 }
