@@ -1,7 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 mod types;
-
 use ink_lang as ink;
 
 #[ink::contract]
@@ -95,24 +94,26 @@ mod lendingpool {
 
     #[ink(storage)]
     pub struct Lendingpool {
-        // DOT
         reserve: ReserveData,
-
         users_data: StorageHashMap<AccountId, UserReserveData>,
-        //store the delegateallowance
         delegate_allowance: StorageHashMap<(AccountId, AccountId), Balance>,
         users_kyc_data: StorageHashMap<AccountId, UserKycData>,
     }
 
-    impl Lendingpool {
+    impl Lendingpool {  
         #[ink(constructor)]
-        pub fn new(stoken: AccountId, debt_token: AccountId) -> Self {
+        pub fn new(stoken: AccountId, debt_token: AccountId, ltv: u128, liquidity_threshold: u128, liquidity_bonus: u128,reserve_factor: u128,) -> Self {
             Self {
                 reserve: ReserveData {
                     stable_liquidity_rate: 18,
                     stable_borrow_rate: 10,
                     stoken_address: stoken,
                     stable_debt_token_address: debt_token,
+                    ltv: ltv,
+                    liquidity_threshold: liquidity_threshold,
+                    liquidity_bonus: liquidity_bonus,
+                    decimals: 12,
+                    reserve_factor: reserve_factor,
                 },
                 users_data: StorageHashMap::new(),
                 delegate_allowance: StorageHashMap::new(),
@@ -159,6 +160,15 @@ mod lendingpool {
             }
 
             assert!(stoken.mint(receiver, amount).is_ok());
+            //把user加到userconfig上: u:UserConfig
+            // let user_data = UserData{
+            //     principal_borrow_balance: ,
+            //     last_variable_borrow_cumulative_index: , 
+            //     origination_fee: ,
+            //     stable_borrow_rate: ,
+            //     last_update_timestamp: ,
+            // }
+            // u.user_config.insert(sender, user_data)
 
             self.env().emit_event(Deposit {
                 user: sender,
@@ -168,9 +178,13 @@ mod lendingpool {
         }
 
         #[ink(message)]
-        pub fn get_reserve_data(&self, user: AccountId) -> Option<UserReserveData> {
+        pub fn get_user_reserve_data(&self, user: AccountId) -> Option<UserReserveData> {
             self.users_data.get(&user).cloned()
         }
+        // #[ink(message)]
+        // pub fn get_reserve_data(&self){
+        //     let (_,_,x,_,_) = get_params(&self.reserve);
+        // }
 
         #[ink(message)]
         pub fn get_scaled_balance(&self, user: AccountId) -> Balance {

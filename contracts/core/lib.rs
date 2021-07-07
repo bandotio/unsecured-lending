@@ -6,110 +6,130 @@ use ink_lang as ink;
 mod core {
     use ink_storage::traits::{PackedLayout, SpreadLayout};
     use ink_storage::collections::HashMap;
-    pub const ONE_YEAR:u128 = 365;
-    pub const HEALTH_FACTOR_LIQUIDATION_THRESHOLD:u128 = 1; 
-    pub const REBALANCE_UP_USAGE_RATIO_THRESHOLD:u128 = 95; 
-
-    #[derive(Debug,PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
-    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
-    pub enum InterestRateMode {
-        NONE, 
-        STABLE,
-        VARIABLE,
+    pub const ONE_YEAR:u128 = 365; //需要加一些0
+    pub const REBALANCE_UP_USAGE_RATIO_THRESHOLD:u128 = 95; //需加单位
+    //HashMap要用到PackedLayout
+    pub struct UserConfig {
+        user_config: HashMap<AccountId, UserData>,
     }
 
     #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
     pub struct UserData {
         principal_borrow_balance: u128,
-        last_variable_borrow_cumulative_index: u128, 
+        last_borrow_cumulative_index: u128, 
         origination_fee: u128,
-        stable_borrow_rate: u128,
+        borrow_rate: u128,
         last_update_timestamp: u64,
-        use_as_collateral: bool,
+        //use_as_collateral: bool,
     }
-    //to-do reserveconfiguration
     #[ink(storage)]
+    pub struct ReserveConfigurationData {
+        ltv: u128,
+        liquidity_threshold: u128,
+        liquidity_bonus: u128,
+        decimals: u128,
+        reserve_factor: u128,
+    }
+
+    impl ReserveConfigurationData{
+        #[ink(constructor)]
+        pub fn new(ltv:u128, liquidity_threshold:u128, liquidity_bonus: u128, reserve_factor:u128) -> Self{
+            Self{
+                ltv: ltv,
+                liquidity_threshold: liquidity_threshold,
+                liquidity_bonus: liquidity_bonus,
+                decimals: 12,
+                reserve_factor: reserve_factor,
+            }
+        }
+        #[ink(message)]
+        pub fn get_params(&self) -> (u128, u128, u128, u128, u128){
+            return (self.ltv, self.liquidity_threshold, self.liquidity_bonus, self.decimals, self.reserve_factor)
+        }
+    }
+
+
     pub struct ReserveData {
-        liquidity_index: u128,
-        variable_borrow_index: u128,
+        liquidity_index: u128,//last_liquidity_cumulatvie_index
+        variable_borrow_index: u128,//last_variable_borrow_cumulative_index
         current_liquidity_rate: u128,
-        current_variable_borrow_rate: u128,
+        //current_variable_borrow_rate: u128,
         current_stable_borrow_rate: u128,
         last_update_timestamp: u64, 
         borrowing_enabled: bool,
     }
 
-    impl ReserveData {
-        #[ink(constructor)]
-        pub fn new() -> Self{
-            unimplemented!()
-        }
-        #[ink(message)]
-        pub fn get_normalized_income(&self) -> u128{
-            let timestamp = self.last_update_timestamp; 
-            if timestamp == Self::env().block_timestamp() {
-                return self.liquidity_index
-            }
-            // to-do, replace *，
-            let cumulated:u128 = self.caculate_linear_interest() * &self.liquidity_index;
-            cumulated
-        }
+    // impl ReserveData {
+    //     #[ink(constructor)]
+    //     pub fn new() -> Self{
+    //         unimplemented!()
+    //     }
+    //     #[ink(message)]//后面要全局注意修改&
+    //     pub fn get_normalized_income(&self) -> u128{
+    //         let timestamp = self.last_update_timestamp; 
+    //         if timestamp == Self::env().block_timestamp() {
+    //             return self.liquidity_index
+    //         }
+    //         // to-do, replace *，注意引用可以这样的
+    //         let cumulated:u128 = self.caculate_linear_interest() * &self.liquidity_index;
+    //         cumulated
+    //     }
 
-       fn caculate_linear_interest(&self) -> u128{
-            let time_difference = Self::env().block_timestamp() - &self.last_update_timestamp;
-            //let interest:u128 = &self.current_liquidity_rate * time_difference.into() / ONE_YEAR + 1; 
-            let interest:u128 = 0;
-            interest
-        }
+    //    fn caculate_linear_interest(&self) -> u128{
+    //         let time_difference = Self::env().block_timestamp() - &self.last_update_timestamp;
+    //         //let interest:u128 = &self.current_liquidity_rate * time_difference.into() / ONE_YEAR + 1; 
+    //         let interest:u128 = 0;
+    //         interest
+    //     }
 
-        #[ink(message)]
-        pub fn get_normalized_debt(&self) -> u128{
-            let timestamp = self.last_update_timestamp; 
-            if timestamp == Self::env().block_timestamp() {
-                return self.variable_borrow_index
-            }
-            let cumulated:u128 = calculate_compounded_interest(&self.variable_borrow_index, timestamp) * &self.variable_borrow_index;
-            cumulated
-        }
+    //     #[ink(message)]
+    //     pub fn get_normalized_debt(&self) -> u128{
+    //         let timestamp = self.last_update_timestamp; 
+    //         if timestamp == Self::env().block_timestamp() {
+    //             return self.variable_borrow_index
+    //         }
+    //         let cumulated:u128 = calculate_compounded_interest(&self.variable_borrow_index, timestamp) * &self.variable_borrow_index;
+    //         cumulated
+    //     }
 
-        #[ink(message)]
-        pub fn update_indexes(&self,scaled_variable_debt:u128, timestamp:u64) -> (u128, u128){
-            let mut new_liquidity_index = self.liquidity_index;
-            let mut new_variable_borrow_index = self.variable_borrow_index;
+    //     #[ink(message)]
+    //     pub fn update_indexes(&self,scaled_variable_debt:u128, timestamp:u64) -> (u128, u128){
+    //         let mut new_liquidity_index = self.liquidity_index;
+    //         let mut new_variable_borrow_index = self.variable_borrow_index;
 
-            if self.current_liquidity_rate > 0 {
-                let cumulated_liquidity_interest = self.caculate_linear_interest();
-                new_liquidity_index *= cumulated_liquidity_interest;
-                //todo 不要让new_liquidity_index overflow
-                // todo self.liquidity_index = new_liquidity_index
-                if scaled_variable_debt ==! 0 {
-                    let cumulated_variable_borrow_interest = calculate_compounded_interest(&self.current_liquidity_rate, timestamp);
-                    new_variable_borrow_index *= cumulated_variable_borrow_interest;
-                    //todo 不要overflow
-                    //todo self.variable_borrow_index = new_variable_borrow_index
-                }
-            }
-            //todo  self.last_update_timestamp = Self::env().block_timestamp();
-            (new_liquidity_index, new_variable_borrow_index)
-        }
+    //         if self.current_liquidity_rate > 0 {
+    //             let cumulated_liquidity_interest = self.caculate_linear_interest();
+    //             new_liquidity_index *= cumulated_liquidity_interest;
+    //             //todo 不要让new_liquidity_index overflow
+    //             // todo self.liquidity_index = new_liquidity_index
+    //             if scaled_variable_debt ==! 0 {
+    //                 let cumulated_variable_borrow_interest = calculate_compounded_interest(&self.current_liquidity_rate, timestamp);
+    //                 new_variable_borrow_index *= cumulated_variable_borrow_interest;
+    //                 //todo 不要overflow
+    //                 //todo self.variable_borrow_index = new_variable_borrow_index
+    //             }
+    //         }
+    //         //todo  self.last_update_timestamp = Self::env().block_timestamp();
+    //         (new_liquidity_index, new_variable_borrow_index)
+    //     }
 
-        //admin allowed only, call it when it comes to system issues
-        fn set_borrowing_enabled(&self, enabled: bool) {
-            // todo self.borrowing_enabled : enabled
-        }
+    //     //admin allowed only, call it when it comes to system issues
+    //     fn set_borrowing_enabled(&self, enabled: bool) {
+    //         // todo self.borrowing_enabled : enabled
+    //     }
 
-        fn update_state(&self){
-            // get scaled_variable_debt
-            // get previous_variable_borrow_index
-            // get previous_liquidity_index
-            // last_updated_timestamp
-            // call update_indexes
-            // call mint_to_treasury
-        }
+    //     fn update_state(&self){
+    //         // get scaled_variable_debt
+    //         // get previous_variable_borrow_index
+    //         // get previous_liquidity_index
+    //         // last_updated_timestamp
+    //         // call update_indexes
+    //         // call mint_to_treasury
+    //     }
 
     
-    } 
+    // } 
 
     fn calculate_compounded_interest(rate:&u128, last_update_timestamp:u64) -> u128{
         //let time_difference = ink_env::block_timestamp() - last_update_timestamp;
@@ -132,7 +152,7 @@ mod core {
         let interest:u128 = 0;
         interest
     }
-
+//checked
     fn calculate_health_factor_from_balance(total_collateral_in_usd:u128, total_debt_in_usd:u128, liquidation_threshold:u128) -> u128{
         if total_debt_in_usd == 0 { return 0};
         let result = total_collateral_in_usd * liquidation_threshold / total_debt_in_usd;
@@ -151,60 +171,6 @@ mod core {
         _reserves_count: u128,
         //_reserves: HashMap<AccountId, ReserveData>,
     }
- 
-    struct CalculateUserAccountData {
-        reserve_unit_price: u128,
-        token_unit: u128,
-        compounded_liquidity_balance: u128,
-        compound_borrow_balance: u128,
-        decimals: u128,
-        ltv: u128,
-        liquidation_threshold: u128,
-        i: u128,
-        health_factor: u128,
-        total_collateral_in_usd: u128,
-        total_debt_in_usd: u128,
-        avg_ltv: u128,
-        avg_liquidation_threshold: u128,
-        current_reserve_address: AccountId,
-    }
-
-    fn calculate_user_account_data( vars:&mut CalculateUserAccountData, user:AccountId, token:AccountId, user_config:Option<UserData>) -> (u128, u128, u128, u128, u128){
-        if user_config == None {return (0,0,0,0,0);}
-        //loop all the reserves to {
-            //make sure only use the reserves that are used for collateral and borrowing
-        //get liquidation_threshold, decimals and ltv from the above reserves
-        //let var.token_unit = 10**var.decimals;
-        //get the reserves' price
-        //if var.liquidation_threshold != 0 && user_config.use_as_collateral {
-            //get the s token balance of the user from the reserve(compounded_liquidity_balance)
-            //use the oracle to present the s tokens above in usd(liquidity_balance_in_usd)
-            //total_collateral_in_usd += liquidity_balance_in_usd
-            // avg_ltv += (liquidity_balance_in_usd * ltv)
-            // ave_liquidation_threshold += (liquidity_balance_in_usd * liquidation_threshold)
-        //}
-        //if user_config.is_borrowing {
-            // compounded_borrow_balance = stabledebt + variable_debt
-            // total_debt_in_usd = compounded_borrow_balance -> oracle
-        //}
-        //}
-        vars.total_collateral_in_usd = 0; //place_holder
-        vars.total_debt_in_usd = 0;//place_holder
-        
-        if vars.total_collateral_in_usd == 0 { 
-            vars.avg_ltv = 0;
-            vars.avg_liquidation_threshold = 0
-        } else {
-            vars.avg_ltv /= vars.total_collateral_in_usd;
-            vars.avg_liquidation_threshold /= vars.total_collateral_in_usd
-        }
-        vars.health_factor = calculate_health_factor_from_balance(
-            vars.total_collateral_in_usd,
-            vars.total_debt_in_usd,
-            vars.avg_liquidation_threshold
-        );
-        (vars.total_collateral_in_usd, vars.total_debt_in_usd, vars.avg_ltv, vars.avg_liquidation_threshold, vars.health_factor)
-    }
 
     struct BalanceDecreaseAllowedData{
         decimals: u128,
@@ -217,7 +183,7 @@ mod core {
         liquidation_threshold_after_decrease: u128,
         health_factor_after_decrease: u128,
     }
-
+//参数要另加，被引用时怎么办？
     fn balance_decrease_allowed(vars:&mut BalanceDecreaseAllowedData, asset:AccountId, user:AccountId, amount:u128, user_config:UserData) -> bool{
         //if user in this reserve is not borrowing any and is not using as collateral then return true
         //get liquidation_threshold and decimals from the reserve getParams()
@@ -274,7 +240,7 @@ mod core {
         // get_supply_data()
         vars.previous_variable_debt = scaled_variable_debt * previous_variable_borrow_index;
         vars.current_variable_debt = scaled_variable_debt * new_liquidity_index;
-
+        //这里记得要改
         vars.cumulated_stable_interest = calculate_compounded_interest(&vars.avg_stable_rate, vars.stable_supply_updated_timestamp);
         vars.previous_stable_debt = vars.principal_stable * vars.cumulated_stable_interest;
         vars.total_debt_accrued = vars.current_variable_debt
@@ -314,14 +280,15 @@ mod core {
         //event
     }
 
-    fn validate_transfer(from:AccountId, reserve:ReserveData){
-        // 用(, , , , health_factor) = calculate_user_account_data(xxxx)
-        // require health_factor >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD
-    }
+    //参数要另加
+    // fn validate_transfer(from:AccountId, reserve:ReserveData){
+    //     // 用(, , , , health_factor) = calculate_user_account_data(xxxx)
+    //     // require health_factor >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD
+    // }
 
     fn validate_liquidation_call(
-        collateral_reserve:ReserveData, 
-        principal_reserve:ReserveData,
+        //collateral_reserve:ReserveData, 
+        //principal_reserve:ReserveData,
         user_config:UserData,
         user_health_factor: u128,
         user_stable_debt: u128,
@@ -336,13 +303,15 @@ mod core {
         true
     }
 
-
+    //另加参数
     fn validate_set_use_reserve_as_collateral(){
        // make sure 就是原生币的atoken的数量 > 0
        //make sure use_as_collateral && balance_decrease_allowed()
     }
-
-    fn validate_rebalance_stable_borrow_rate(reserve:ReserveData, token:AccountId, s_token:AccountId){
+//改返回的方式？
+    fn validate_rebalance_stable_borrow_rate(
+        //reserve:ReserveData, 
+        token:AccountId, s_token:AccountId){
         // let is_active = get_flags();
         // make sure is_active is true oterwise return error
         // let total_debt = stable_debt + variable_debt
@@ -361,24 +330,10 @@ mod core {
         // 2.current_liquidity_rate <= max_variable_borrow_rate * REBALANCE_UP_USAGE_RATIO_THRESHOLD
 
     }
-    fn validate_swap_rate_mode(
-        reserve:ReserveData, 
-        user_config:UserData,
-        stable_debt:u128,
-        variable_debt:u128,
-        current_rate_mode: InterestRateMode
-    ){
-        // if current_rate_mode == InterestRateMode.STABLE{ make sure stable_debt >0}
-        // else if current_rate_mode == InterestRateMode.VARIABLE{make sure variable>0}
-
-        // !userConfig.isUsingAsCollateral(reserve.id) ||
-        // reserve.configuration.getLtv() == 0 ||
-        // total_debt > s_token_balance
-    }
+   
     fn validate_repay(
         reserve:ReserveData,
         amount_sent:u128,
-        rate_mode:InterestRateMode,
         on_behalf_of:AccountId,
         stable_debt:u128,
         variable_debt:u128
@@ -402,14 +357,14 @@ mod core {
         health_factor:u128   
     }
 
+    //另加参数！
     fn validate_borrow(
         vars:ValidateBorrowData,
         asset:AccountId,
-        reserve:ReserveData,
+        //reserve:ReserveData,
         user_address:AccountId,
         amount:u128,
         amount_in_usd:u128,
-        interest_rate_mode:InterestRateMode,
         max_stable_loan_percent:u128
     ) {
         //if amount == 0{ return Error}
@@ -441,6 +396,7 @@ mod core {
         //     amount <= max_loan_size_stable
         // }
     }
+      //另加参数！
     fn validate_withdraw(
         asset:AccountId,
         amount:u128,
@@ -451,10 +407,12 @@ mod core {
         // make sure the reserve is active
         // then makw sure balance_decrease_allowed()
     }
+
     fn validate_deposit(reserve:ReserveData, amount:u128){
         // make sure amount != 0
         // is_active
     }
+
 
     fn _transfer(from:AccountId, to:AccountId, token:AccountId, amount:u128, validate:bool){
         //用mapping到特定reserve, token用在这里
@@ -481,4 +439,77 @@ mod core {
         // }
     }
 
+    fn get_reserve_data(asset:AccountId){}
+    fn get_reserve_configuration(asset:AccountId){}
+    fn get_reserve_normalized_income(asset:AccountId){}
+    fn get_reserve_normalized_debt(asset:AccountId){}
+    fn get_max_borrow_size_percent(){}
+    fn set_reserve_configuratio(){}
+
+    const LIQUIDATION_CLOSE_FACTOR_PERCENT:u128 = 5 * 10_u128.saturating_pow(11); //50%
+    pub const HEALTH_FACTOR_LIQUIDATION_THRESHOLD:u128 =1 * 10_u128.saturating_pow(12);
+
+    struct AvailableCollateralToLiquidateData {
+        user_compouned_borrow_balance:u128,
+        liquidation_bonus:u128,
+        collateral_price:u128,
+        debt_asset_price:u128,
+        max_amount_collateral_to_liquidate:u128,
+        debt_asset_decimals:u128,
+        collateral_decimal:u128,
+    }
+
+    pub struct LiquidationCallData {
+        user_collateral_balance: u128,
+        user_debt:u128,
+        max_liquidatable_debt:u128,
+        actual_debt_to_liquidate:u128,
+        liquidation_ratio:u128,
+        max_collateral_to_liquidate:u128,
+        debt_amount_needed:u128,
+        health_factor:u128,
+        liquidator_previous_s_token_balance:u128,
+        collateral_s_token: AccountId,
+    }
+
+    pub fn liquidation_call(vars:&LiquidationCallData, u:UserConfig, r:ReserveConfigurationData, collateral:AccountId, borrower:AccountId, debt_to_cover:u128, receive_s_token:bool){
+        let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+        let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
+        let (_, _liquidation_threshold, _, _, _) =  = ReserveConfigurationData::get_params(&r);
+        vars.health_factor = calculate_health_factor_from_balance(stoken, debttoken, _liquidation_threshold);
+
+
+
+
+   
+    }
+
+    fn transfer_on_liquidation(from:AccountId, to:AccountId, value:u128){
+    }
+
+
+    fn _caculate_available_collateral_to_liquidate(collateral:AccountId, debt_asset:AccountId, amoun_to_cover:u128, user_collateral_balance:u128) -> (u128, u128){
+        let collateral_amount = 0;
+        let debt_amount_needed = 0;
+        //get collateral token price
+        //get debt token price
+        //看怎样用mapping加上对应的token,
+        //get collatral_decimal, liquidation_bonus
+        //get debt_asset_decimals
+        //max_collateral_to_liquidate = debt_asset_price * debt_to_cover * 10**collateral_decimal
+        //          * liquidation_bonus/ (collateral_price * 10**debt_asset_decimals);
+        //if max_amount_collateral_to_liquidate > user_collateral_balance {
+        //     collateral_amount = user_collateral_balance;
+        //     debt_amount_needed = collateral_price 
+        //         * collateral_amount 
+        //         * 10**debt_asset_decimals
+        //         / (debt_asset_price * 10**collateral_decimal)
+        //         / liquidation_bonus
+        // } else {
+        //     collateral_amount = max_amount_collateral_to_liquidate;
+        //     debt_amount_needed = debt_to_cover;
+        // }
+
+        (collateral_amount, debt_amount_needed)
+    }
 }
