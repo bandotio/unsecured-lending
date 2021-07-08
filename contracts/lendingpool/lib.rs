@@ -13,6 +13,8 @@ mod lendingpool {
     use ink_prelude::{vec, vec::Vec};
     use ink_storage::collections::HashMap as StorageHashMap;
 
+    pub const ONE_YEAR:u128 = 365; //需要加一些0
+
     /// * @dev Emitted on deposit()
     /// * @param reserve The address of the underlying asset of the reserve
     /// * @param user The address initiating the deposit
@@ -114,6 +116,9 @@ mod lendingpool {
                     liquidity_bonus: liquidity_bonus,
                     decimals: 12,
                     reserve_factor: reserve_factor,
+                    liquidity_index:1, //这个需加12位0？
+                    variable_borrow_index:1,//这个需加12位0？
+                    last_updated_timestamp:Default::default(),
                 },
                 users_data: StorageHashMap::new(),
                 delegate_allowance: StorageHashMap::new(),
@@ -181,36 +186,99 @@ mod lendingpool {
         pub fn get_user_reserve_data(&self, user: AccountId) -> Option<UserReserveData> {
             self.users_data.get(&user).cloned()
         }
-        // #[ink(message)]
-        // pub fn get_reserve_data(&self){
-        //     let (_,_,x,_,_) = get_params(&self.reserve);
-        // }
-
-        #[ink(message)]
-        pub fn get_scaled_balance(&self, user: AccountId) -> Balance {
-            let reserve_data = self
-                .users_data
-                .get(&user)
-                .cloned()
-                .unwrap_or(Default::default());
-
-            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
-            let debttoken: IERC20 =
-                FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
-
-            // user balance should always be stoken - debttoken
-            let mut user_balance = stoken
-                .balance_of(user)
-                .saturating_sub(debttoken.balance_of(user));
-
-            if reserve_data.last_update_timestamp != 0 {
-                let interval = Self::env().block_timestamp() - reserve_data.last_update_timestamp;
-                let interest = user_balance * interval as u128 * self.reserve.stable_liquidity_rate
-                    / (100 * 365 * 24 * 3600 * 1000);
-                user_balance += interest;
+        
+        pub fn get_normalized_income(&self, vars: ReserveData) -> u128 {
+            let timestamp = vars.last_updated_timestamp; 
+            if timestamp == self.env().block_timestamp() {
+                return vars.liquidity_index
             }
-            user_balance
+            let cumulated = self.caculate_linear_interest(&vars) * &vars.liquidity_index;
+            cumulated
         }
+
+        fn caculate_linear_interest(&self, vars: &ReserveData) -> u128 {
+            let time_difference = self.env().block_timestamp() - &vars.last_updated_timestamp;
+            //let interest = vars.stable_liquidity_rate * time_difference.into() / ONE_YEAR + 1; //need to be replaced by one
+            let interest =0;
+            interest
+        }
+
+        fn calculate_compounded_interest(&self, rate:u128, last_update_timestamp:u64) -> u128{
+            let time_difference = self.env().block_timestamp() - last_update_timestamp;
+            if time_difference == 0 {
+                return 1
+            } 
+            let time_difference_minus_one = time_difference - 1;
+            let time_difference_minus_two = if time_difference > 2{
+                time_difference - 2
+            } else {
+                0
+            };
+            let rate_per_second = rate / ONE_YEAR;
+            let base_power_two = rate_per_second * rate_per_second;
+            let base_power_three = base_power_two * rate_per_second;
+            //let second_term = time_difference * time_difference_minus_one * base_power_two / 2;
+            // let third_term = time_difference * time_difference_minus_one * time_difference_minus_two * base_power_three / 6;
+            // let interest = rate_per_second * time_difference + 1 + second_term + third_term;
+            let interest:u128 = 0;
+            interest
+        }
+
+        //后面两个参数要？
+        fn update_indexes(&self, vars: &mut ReserveData,scaled_debt:u128, timestamp:u64, liquidity_index:u128, variable_borrow_index:u128) -> (u128, u128){
+            let current_liquidity_rate = vars.stable_liquidity_rate;
+            let mut new_liquidity_index = vars.liquidity_index;        
+            let mut new_variable_borrow_index = vars.variable_borrow_index;
+            if current_liquidity_rate > 0 {
+                let cumulated_liquidity_interest = self.caculate_linear_interest(&vars);
+                new_liquidity_index *= cumulated_liquidity_interest;
+                //todo new_liquidity_index overflow
+                vars.liquidity_index = new_liquidity_index;
+                //要确认可用，因为是被variable_debt用的！
+                if scaled_debt != 0{
+                    let cumulated_borrow_interest = self.calculate_compounded_interest(vars.stable_borrow_rate, timestamp);
+                    new_variable_borrow_index = cumulated_borrow_interest * variable_borrow_index;
+                    //todo new_variable_borrow_index overflow
+                    vars.variable_borrow_index = new_variable_borrow_index; 
+                }                         
+            }
+            vars.last_updated_timestamp = self.env().block_timestamp();
+            (new_liquidity_index, new_variable_borrow_index)
+        }
+
+        fn update_state(&self, vars:&mut ReserveData){
+            let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
+            let debttoken = debttoken.total_supply();
+            let previous_variable_borrow_index = vars.variable_borrow_index;
+            let previous_liquidity_index = vars.liquidity_index;
+            let last_updated_timestamp = vars.last_updated_timestamp;
+            let (new_liquidity_index, new_variable_borrow_index) = 
+            self.update_indexes(vars, debttoken, last_updated_timestamp, previous_liquidity_index, previous_variable_borrow_index);
+            //mint_to_treasury
+        }
+
+        // #[ink(message)]
+        // pub fn get_scaled_balance(&self, user: AccountId) -> Balance {
+        //     let reserve_data = self
+        //         .users_data
+        //         .get(&user)
+        //         .cloned()
+        //         .unwrap_or(Default::default());
+        //     let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+        //     let debttoken: IERC20 =
+        //         FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
+        //     // user balance should always be stoken - debttoken
+        //     let mut user_balance = stoken
+        //         .balance_of(user)
+        //         .saturating_sub(debttoken.balance_of(user));
+        //     if reserve_data.last_update_timestamp != 0 {
+        //         let interval = Self::env().block_timestamp() - reserve_data.last_update_timestamp;
+        //         let interest = user_balance * interval as u128 * self.reserve.stable_liquidity_rate
+        //             / (100 * 365 * 24 * 3600 * 1000);
+        //         user_balance += interest;
+        //     }
+        //     user_balance
+        // }
 
         /// * @dev Withdraws an `amount` of underlying asset from the reserve, burning the equivalent aTokens owned
         /// * E.g. User has 100 aUSDC, calls withdraw() and receives 100 USDC, burning the 100 aUSDC
