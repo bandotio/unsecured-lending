@@ -107,12 +107,13 @@ mod lendingpool {
         pub fn new(stoken: AccountId, debt_token: AccountId, ltv: u128, liquidity_threshold: u128, liquidity_bonus: u128,reserve_factor: u128,) -> Self {
             Self {
                 reserve: ReserveData {
-                    stable_liquidity_rate: 18,
+                    stable_liquidity_rate: 18,//要删！
+                    liquidity_rate:Default::default(),
                     stable_borrow_rate: 10,
                     stoken_address: stoken,
                     stable_debt_token_address: debt_token,
                     ltv: ltv,
-                    liquidity_threshold: liquidity_threshold,
+                    liquidity_threshold: liquidity_threshold,//是随时变的
                     liquidity_bonus: liquidity_bonus,
                     decimals: 12,
                     reserve_factor: reserve_factor,
@@ -248,12 +249,12 @@ mod lendingpool {
 
         fn update_state(&self, vars:&mut ReserveData){
             let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
-            let debttoken = debttoken.total_supply();
+            let total_debttoken = debttoken.total_supply();
             let previous_variable_borrow_index = vars.variable_borrow_index;
             let previous_liquidity_index = vars.liquidity_index;
             let last_updated_timestamp = vars.last_updated_timestamp;
             let (new_liquidity_index, new_variable_borrow_index) = 
-            self.update_indexes(vars, debttoken, last_updated_timestamp, previous_liquidity_index, previous_variable_borrow_index);
+            self.update_indexes(vars, total_debttoken, last_updated_timestamp, previous_liquidity_index, previous_variable_borrow_index);
             //mint_to_treasury
         }
 
