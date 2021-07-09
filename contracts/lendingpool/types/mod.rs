@@ -16,8 +16,8 @@ pub const HEALTH_FACTOR_LIQUIDATION_THRESHOLD:u128 =1 * 10_u128.saturating_pow(1
 #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
 pub struct ReserveData {
     pub stable_liquidity_rate: u128,//要删！
-    pub liquidity_rate:u128,//这个不再是利息，而是流动率！
-    pub stable_borrow_rate: u128,
+    pub liquidity_rate:u128,//而是流动率！动
+    pub stable_borrow_rate: u128, //
     pub stoken_address: AccountId,
     pub stable_debt_token_address: AccountId,
 
@@ -29,6 +29,17 @@ pub struct ReserveData {
     pub liquidity_index: u128,//代替利息的存在！
     pub variable_borrow_index: u128,
     pub last_updated_timestamp: u64,
+}
+//要放到lending初始！！！
+#[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
+#[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
+pub struct InterestRateData {
+    pub optimal_utilization_rate:u128,
+    pub excess_utilization_rate:u128,
+    pub base_stable_borrow_rate: u128,
+    pub stable_rate_slope1: u128,
+    pub stable_rate_slope2:u128,
+    pub utilization_rate: u128,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
@@ -115,7 +126,7 @@ fn update_interest_rates(vars:&mut ReserveData, liquidity_added: u128,liquidity_
     let (new_liquidity_rate, new_borrow_rate) = (0,0);
 
     vars.liquidity_rate = new_liquidity_rate;
-    vars.stable_borrow_rate = new_stable_borrow_rate;
+    vars.stable_borrow_rate = new_borrow_rate;
 }
 
 //ting
@@ -211,9 +222,48 @@ pub fn liquidation_call(r:ReserveData, collateral:AccountId, borrower:AccountId,
 
 fn transfer_on_liquidation(from:AccountId, to:AccountId, value:u128){}
 
-fn _caculate_available_collateral_to_liquidate(collateral:AccountId, debt_asset:AccountId, amoun_to_cover:u128, user_collateral_balance:u128) -> (u128, u128){
+pub fn caculate_available_collateral_to_liquidate(collateral:AccountId, debt_asset:AccountId, amoun_to_cover:u128, user_collateral_balance:u128) -> (u128, u128){
     let collateral_amount = 0;
     let debt_amount_needed = 0;
 
     (collateral_amount, debt_amount_needed)
+}
+//以下算述需考虑精位！
+pub fn calculate_interest_rates(
+    reserve:&ReserveData,
+    vars:&mut InterestRateData,
+    liquidity_added:u128,
+    liquidity_taken:u128,
+    total_debt:u128,
+    borrow_rate:u128,
+    reserve_factor:u128,
+) -> (u128, u128) {
+    let mut stoken: IERC20 = FromAccountId::from_account_id(reserve.stoken_address);
+    let _available_liqudity = stoken.total_supply();
+    let current_available_liqudity = _available_liqudity + liquidity_added - liquidity_taken;
+
+    let debttoken: IERC20 =  FromAccountId::from_account_id(reserve.stable_debt_token_address);
+    let total_debt = debttoken.total_supply();
+
+    let mut current_borrow_rate = 0;
+    let mut current_liquidity_rate = 0;
+    let mut utilization_rate = 0;
+
+    if total_debt == 0 {
+        utilization_rate = 0
+    } else {
+        utilization_rate = total_debt / (current_available_liqudity + total_debt)
+    }
+
+    if utilization_rate > vars.optimal_utilization_rate{
+        let excess_utilization_rate_ratio = utilization_rate - vars.optimal_utilization_rate / vars.excess_utilization_rate;
+        current_borrow_rate = vars.base_stable_borrow_rate + vars.stable_rate_slope1 + vars.stable_rate_slope2 * excess_utilization_rate_ratio;
+    } else {
+        current_borrow_rate = vars.base_stable_borrow_rate + utilization_rate * vars.stable_rate_slope1 / vars.optimal_utilization_rate;
+    }
+    if total_debt != 0 {
+        current_liquidity_rate = total_debt / current_borrow_rate * utilization_rate * (1-reserve_factor);
+    }
+    vars.utilization_rate = utilization_rate;
+    (current_liquidity_rate, current_borrow_rate)
 }
