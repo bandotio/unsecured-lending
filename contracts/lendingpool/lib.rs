@@ -12,8 +12,6 @@ mod lendingpool {
     use ink_prelude::{vec, vec::Vec};
     use ink_storage::collections::HashMap as StorageHashMap;
 
-    pub const ONE_YEAR:u128 = 365; //需要加一些0
-
     #[ink(event)]
     pub struct Deposit {
         #[ink(topic)]
@@ -70,7 +68,8 @@ mod lendingpool {
         users_data: StorageHashMap<AccountId, UserReserveData>,
         delegate_allowance: StorageHashMap<(AccountId, AccountId), Balance>,
         users_kyc_data: StorageHashMap<AccountId, UserKycData>,
-        interest_setting: InterestRateData
+        interest_setting: InterestRateData,
+        max_borrow_size_percent:u128 //根据stable的，可要可不要！
     }
 
     impl Lendingpool {  
@@ -79,23 +78,22 @@ mod lendingpool {
             stoken: AccountId, debt_token: AccountId, 
             ltv: u128, liquidity_threshold: u128, 
             liquidity_bonus: u128, reserve_factor: u128,
-            optimal_utilization_rate:u128, base_stable_borrow_rate: u128, 
-            stable_rate_slope1: u128, stable_rate_slope2:u128,
+            optimal_utilization_rate:u128, base_borrow_rate: u128, 
+            rate_slope1: u128, rate_slope2:u128,
         ) -> Self {
-            Self {
+            Self {//洋
                 reserve: ReserveData {
-                    stable_liquidity_rate: 18,//要删！
-                    liquidity_rate:Default::default(),
-                    stable_borrow_rate: 10,
+                    liquidity_rate:10,
+                    borrow_rate: 18,
                     stoken_address: stoken,
-                    stable_debt_token_address: debt_token,
+                    debt_token_address: debt_token,
                     ltv: ltv,
-                    liquidity_threshold: liquidity_threshold,//是随时变的
+                    liquidity_threshold: liquidity_threshold,//是随时变的？
                     liquidity_bonus: liquidity_bonus,
                     decimals: 12,
                     reserve_factor: reserve_factor,
                     liquidity_index:1, //这个需加12位0？
-                    variable_borrow_index:1,//这个需加12位0？
+                    borrow_index:1,//这个需加12位0？
                     last_updated_timestamp:Default::default(),
                 },
                 users_data: StorageHashMap::new(),
@@ -104,14 +102,14 @@ mod lendingpool {
                 interest_setting: InterestRateData {
                     optimal_utilization_rate:optimal_utilization_rate,
                     excess_utilization_rate:1 - optimal_utilization_rate,
-                    base_stable_borrow_rate: base_stable_borrow_rate,
-                    stable_rate_slope1: stable_rate_slope1,
-                    stable_rate_slope2: stable_rate_slope2,
+                    base_borrow_rate: base_borrow_rate,
+                    rate_slope1: rate_slope1,
+                    rate_slope2: rate_slope2,
                     utilization_rate: Default::default(),
                 },
+                max_borrow_size_percent:2500,//利率借款时的额度不能超过资产剩余可借额度的25%
             }
         }
-
        
         #[ink(message, payable)]
         pub fn deposit(&mut self, on_behalf_of: Option<AccountId>) {
@@ -122,10 +120,8 @@ mod lendingpool {
             }
             let amount = self.env().transferred_balance();
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
-
             let mut stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
-            let debttoken: IERC20 =
-                FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
+            let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
 
             let entry = self.users_data.entry(receiver);
             let reserve_data = entry.or_insert(Default::default());
@@ -134,7 +130,7 @@ mod lendingpool {
 
             if reserve_data.last_update_timestamp != 0 {
                 let interval = Self::env().block_timestamp() - reserve_data.last_update_timestamp;
-                let interest = user_balance * interval as u128 * self.reserve.stable_liquidity_rate
+                let interest = user_balance * interval as u128 * self.reserve.liquidity_rate
                     / (100 * 365 * 24 * 3600 * 1000);
                 if interest > 0 {
                     reserve_data.cumulated_liquidity_interest += interest;
@@ -150,7 +146,7 @@ mod lendingpool {
             //     principal_borrow_balance: ,
             //     last_variable_borrow_cumulative_index: , 
             //     origination_fee: ,
-            //     stable_borrow_rate: ,
+            //     borrow_rate: ,
             //     last_update_timestamp: ,
             // }
             // u.user_config.insert(sender, user_data)
@@ -168,23 +164,23 @@ mod lendingpool {
         // }
 
         // #[ink(message)]
-        // pub fn get_base_stable_borrow_rate(&self) -> u128 {
-        //     self.base_stable_borrow_rate
+        // pub fn get_base_borrow_rate(&self) -> u128 {
+        //     self.base_borrow_rate
         // }
     
         // #[ink(message)]
-        // pub fn get_stable_rate_slope1(&self) -> u128 {
-        //     self.stable_rate_slope1
+        // pub fn get_rate_slope1(&self) -> u128 {
+        //     self.rate_slope1
         // }
 
         // #[ink(message)]
-        // pub fn get_stable_rate_slope2(&self) -> u128 {
-        //     self.stable_rate_slope2
+        // pub fn get_rate_slope2(&self) -> u128 {
+        //     self.rate_slope2
         // }
 
         // #[ink(message)]
-        // pub fn get_max_stable_borrow_rate(&self) -> u128 {
-        //     self.base_stable_borrow_rate + self.stable_rate_slope1 + self.stable_rate_slope2
+        // pub fn get_max_borrow_rate(&self) -> u128 {
+        //     self.base_borrow_rate + self.rate_slope1 + self.rate_slope2
         // }
         
         pub fn get_normalized_income(&self, vars: ReserveData) -> u128 {
@@ -192,17 +188,17 @@ mod lendingpool {
             if timestamp == self.env().block_timestamp() {
                 return vars.liquidity_index
             }
-            let cumulated = self.caculate_linear_interest(&vars) * &vars.liquidity_index;
+            let cumulated = self.caculate_linear_interest(&vars, timestamp) * &vars.liquidity_index;
             cumulated
         }
-
-        fn caculate_linear_interest(&self, vars: &ReserveData) -> u128 {
-            let time_difference = self.env().block_timestamp() - &vars.last_updated_timestamp;
-            //let interest = vars.stable_liquidity_rate * time_difference.into() / ONE_YEAR + 1; //need to be replaced by one
+        //david
+        fn caculate_linear_interest(&self, vars: &ReserveData, last_updated_timestamp: u64) -> u128 {
+            let time_difference = self.env().block_timestamp() - last_updated_timestamp;
+            //let interest = vars.liquidity_rate * time_difference.into() / ONE_YEAR + 1; //need to be replaced by one
             let interest =0;
             interest
         }
-
+        //david
         fn calculate_compounded_interest(&self, rate:u128, last_update_timestamp:u64) -> u128{
             let time_difference = self.env().block_timestamp() - last_update_timestamp;
             if time_difference == 0 {
@@ -223,38 +219,37 @@ mod lendingpool {
             let interest:u128 = 0;
             interest
         }
-
-        //后面两个参数要？
-        fn update_indexes(&self, vars: &mut ReserveData,scaled_debt:u128, timestamp:u64, liquidity_index:u128, variable_borrow_index:u128) -> (u128, u128){
-            let current_liquidity_rate = vars.stable_liquidity_rate;
-            let mut new_liquidity_index = vars.liquidity_index;        
-            let mut new_variable_borrow_index = vars.variable_borrow_index;
+        //ting
+        fn update_indexes(&self, vars: &mut ReserveData,scaled_debt:u128, timestamp:u64, liquidity_index:u128, borrow_index:u128) -> (u128, u128){
+            let current_liquidity_rate = vars.liquidity_rate;
+            let mut new_liquidity_index = liquidity_index;        
+            let mut new_borrow_index = borrow_index;
             if current_liquidity_rate > 0 {
-                let cumulated_liquidity_interest = self.caculate_linear_interest(&vars);
-                new_liquidity_index *= cumulated_liquidity_interest;
+                let cumulated_liquidity_interest = self.caculate_linear_interest(&vars, timestamp);
+                new_liquidity_index *= cumulated_liquidity_interest;//这个算法不对？应该是+
                 //todo new_liquidity_index overflow
                 vars.liquidity_index = new_liquidity_index;
                 //要确认可用，因为是被variable_debt用的！
                 if scaled_debt != 0{
-                    let cumulated_borrow_interest = self.calculate_compounded_interest(vars.stable_borrow_rate, timestamp);
-                    new_variable_borrow_index = cumulated_borrow_interest * variable_borrow_index;
-                    //todo new_variable_borrow_index overflow
-                    vars.variable_borrow_index = new_variable_borrow_index; 
+                    let cumulated_borrow_interest = self.calculate_compounded_interest(vars.borrow_rate, timestamp);
+                    new_borrow_index = cumulated_borrow_interest * borrow_index;
+                    //todo new_borrow_index overflow
+                    vars.borrow_index = new_borrow_index; 
                 }                         
             }
             vars.last_updated_timestamp = self.env().block_timestamp();
-            (new_liquidity_index, new_variable_borrow_index)
+            (new_liquidity_index, new_borrow_index)
         }
-
+        //ting
         fn update_state(&self, vars:&mut ReserveData){
-            let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
-            let total_debttoken = debttoken.total_supply();
-            let previous_variable_borrow_index = vars.variable_borrow_index;
+            let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let total_debt = debttoken.total_supply();
+            let previous_borrow_index = vars.borrow_index;
             let previous_liquidity_index = vars.liquidity_index;
             let last_updated_timestamp = vars.last_updated_timestamp;
-            let (new_liquidity_index, new_variable_borrow_index) = 
-            self.update_indexes(vars, total_debttoken, last_updated_timestamp, previous_liquidity_index, previous_variable_borrow_index);
-            //mint_to_treasury
+            let (new_liquidity_index, new_borrow_index) = 
+            self.update_indexes(vars, total_debt, last_updated_timestamp, previous_liquidity_index, previous_borrow_index);
+            //mint_to_treasury ting    mint s_token to the treasury account
         }
 
         // #[ink(message)]
@@ -266,14 +261,14 @@ mod lendingpool {
         //         .unwrap_or(Default::default());
         //     let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
         //     let debttoken: IERC20 =
-        //         FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
+        //         FromAccountId::from_account_id(self.reserve.debt_token_address);
         //     // user balance should always be stoken - debttoken
         //     let mut user_balance = stoken
         //         .balance_of(user)
         //         .saturating_sub(debttoken.balance_of(user));
         //     if reserve_data.last_update_timestamp != 0 {
         //         let interval = Self::env().block_timestamp() - reserve_data.last_update_timestamp;
-        //         let interest = user_balance * interval as u128 * self.reserve.stable_liquidity_rate
+        //         let interest = user_balance * interval as u128 * self.reserve.liquidity_rate
         //             / (100 * 365 * 24 * 3600 * 1000);
         //         user_balance += interest;
         //     }
@@ -291,16 +286,17 @@ mod lendingpool {
 
             let mut stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let debttoken: IERC20 =
-                FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
+                FromAccountId::from_account_id(self.reserve.debt_token_address);
             //user balance should always be stoken - debttoken
             let user_balance = stoken.balance_of(sender) - debttoken.balance_of(sender);
+            //todo user_balance要大于0，这样算是healthfactor=1
             let reserve_data = self
                 .users_data
                 .get_mut(&sender)
                 .expect("user config does not exist");
             let interval = Self::env().block_timestamp() - reserve_data.last_update_timestamp;
 
-            let interest = user_balance * interval as u128 * self.reserve.stable_liquidity_rate
+            let interest = user_balance * interval as u128 * self.reserve.liquidity_rate
                 / (100 * 365 * 24 * 3600 * 1000);
             if interest > 0 {
                 reserve_data.cumulated_liquidity_interest += interest;
@@ -341,7 +337,7 @@ mod lendingpool {
 
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut dtoken: IERC20 =
-                FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
+                FromAccountId::from_account_id(self.reserve.debt_token_address);
 
             // credit delegation allowances check
             let credit_balance = self
@@ -372,7 +368,7 @@ mod lendingpool {
 
             // borrow update depositor interest
             let user_balance = stoken.balance_of(receiver) - dtoken.balance_of(receiver) ;
-            let interest = user_balance * interval as u128 * self.reserve.stable_liquidity_rate
+            let interest = user_balance * interval as u128 * self.reserve.liquidity_rate
                 / (100 * 365 * 24 * 3600 * 1000);
             reserve_data.cumulated_liquidity_interest += interest;
             reserve_data.last_update_timestamp = Self::env().block_timestamp();
@@ -382,10 +378,10 @@ mod lendingpool {
             let reserve_data_sender = entry_sender.or_insert(Default::default());
             let interval =
                 Self::env().block_timestamp() - reserve_data_sender.last_update_timestamp;
-            reserve_data_sender.cumulated_stable_borrow_interest += reserve_data_sender
+            reserve_data_sender.cumulated_borrow_interest += reserve_data_sender
                 .borrow_balance
                 * interval as u128
-                * self.reserve.stable_borrow_rate
+                * self.reserve.borrow_rate
                 / (100 * 365 * 24 * 3600 * 1000);
             reserve_data_sender.borrow_balance += amount;
             reserve_data_sender.last_update_timestamp = Self::env().block_timestamp();
@@ -423,7 +419,7 @@ mod lendingpool {
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
 
             let mut dtoken: IERC20 =
-                FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
+                FromAccountId::from_account_id(self.reserve.debt_token_address);
 
             // update interest
             let reserve_data_sender = self
@@ -432,19 +428,19 @@ mod lendingpool {
                 .expect("you have not borrow any dot");
             let interval =
                 Self::env().block_timestamp() - reserve_data_sender.last_update_timestamp;
-            reserve_data_sender.cumulated_stable_borrow_interest += reserve_data_sender
+            reserve_data_sender.cumulated_borrow_interest += reserve_data_sender
                 .borrow_balance
                 * interval as u128
-                * self.reserve.stable_borrow_rate
+                * self.reserve.borrow_rate
                 / (100 * 365 * 24 * 3600 * 1000);
             reserve_data_sender.borrow_balance -= amount;
             reserve_data_sender.last_update_timestamp = Self::env().block_timestamp();
 
-            if amount <= reserve_data_sender.cumulated_stable_borrow_interest {
-                reserve_data_sender.cumulated_stable_borrow_interest -= amount
+            if amount <= reserve_data_sender.cumulated_borrow_interest {
+                reserve_data_sender.cumulated_borrow_interest -= amount
             } else {
-                let rest = amount - reserve_data_sender.cumulated_stable_borrow_interest;
-                reserve_data_sender.cumulated_stable_borrow_interest = 0;
+                let rest = amount - reserve_data_sender.cumulated_borrow_interest;
+                reserve_data_sender.cumulated_borrow_interest = 0;
                 dtoken.burn(recevier, rest).expect("debt token burn failed");
             }
 

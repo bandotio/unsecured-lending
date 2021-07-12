@@ -7,52 +7,51 @@ use ink_env::AccountId;
 use ink_storage::traits::{PackedLayout, SpreadLayout};
 use ink_env::call::FromAccountId;
 use ierc20::IERC20;
-
-pub const REBALANCE_UP_USAGE_RATIO_THRESHOLD:u128 = 95; //需加单位
-const LIQUIDATION_CLOSE_FACTOR_PERCENT:u128 = 5 * 10_u128.saturating_pow(11); //50%
+pub const ONE_YEAR:u128 = 365; //david
+pub const REBALANCE_UP_USAGE_RATIO_THRESHOLD:u128 = 95; //ting
+pub const LIQUIDATION_CLOSE_FACTOR_PERCENT:u128 = 5 * 10_u128.saturating_pow(11); //50%
 pub const HEALTH_FACTOR_LIQUIDATION_THRESHOLD:u128 =1 * 10_u128.saturating_pow(12);
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
 #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
 pub struct ReserveData {
-    pub stable_liquidity_rate: u128,//要删！
-    pub liquidity_rate:u128,//而是流动率！动
-    pub stable_borrow_rate: u128, //
-    pub stoken_address: AccountId,
-    pub stable_debt_token_address: AccountId,
+    pub liquidity_rate:u128,//liquidityRate: the interest rate for deposits / adding liquidity
+    pub borrow_rate: u128, //静
+    pub stoken_address: AccountId,//静
+    pub debt_token_address: AccountId,//静
 
-    pub ltv: u128,
-    pub liquidity_threshold: u128,
-    pub liquidity_bonus: u128,
-    pub decimals: u128,
-    pub reserve_factor: u128,
-    pub liquidity_index: u128,//代替利息的存在！
-    pub variable_borrow_index: u128,
-    pub last_updated_timestamp: u64,
+    pub ltv: u128,//静
+    pub liquidity_threshold: u128,//静
+    pub liquidity_bonus: u128,//静
+    pub decimals: u128,//静
+    pub reserve_factor: u128,//静
+    pub liquidity_index: u128,//还不知要不要删？
+    pub borrow_index: u128,//delete
+    pub last_updated_timestamp: u64,//动
 }
-//要放到lending初始！！！
+
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
 #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
 pub struct InterestRateData {
     pub optimal_utilization_rate:u128,
     pub excess_utilization_rate:u128,
-    pub base_stable_borrow_rate: u128,
-    pub stable_rate_slope1: u128,
-    pub stable_rate_slope2:u128,
+    pub base_borrow_rate: u128,//重复?直接设0？
+    pub rate_slope1: u128,
+    pub rate_slope2:u128,
     pub utilization_rate: u128,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
 #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
 pub struct UserReserveData {
-    pub cumulated_liquidity_interest: u128,
-    pub cumulated_stable_borrow_interest: u128,
+    pub cumulated_liquidity_interest: u128,//要删？
+    pub cumulated_borrow_interest: u128,//要删？
     pub last_update_timestamp: u64,
     pub borrow_balance: u128,
 
-    last_borrow_cumulative_index: u128, 
-    health_factor:u128,
-    //borrow_rate:u128,
+    last_borrow_cumulative_index: u128, //代替cumulated_stable_borrow_interest，但为什么没有liquidity_interest的代替？要删！
+    health_factor:u128,//delete
+    origination_fee:u128,//平台收的费 //还不知要不要删
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
@@ -87,8 +86,8 @@ pub fn mint_to_treasury(scaled_debt:u128, vars: &ReserveData){
 }
 //ting
 fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u128, user_config:UserReserveData) -> bool{
-    let debttoken: IERC20 =  FromAccountId::from_account_id(vars.stable_debt_token_address);
-    let mut stoken: IERC20 = FromAccountId::from_account_id(vars.stoken_address);
+    let debttoken: IERC20 =  FromAccountId::from_account_id(vars.debt_token_address);
+    let stoken: IERC20 = FromAccountId::from_account_id(vars.stoken_address);
 
     if debttoken.balance_of(user) == 0 {return true;}
     if vars.liquidity_threshold == 0 {
@@ -117,118 +116,55 @@ fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u128, 
 
 //david 记得每个function下考虑要不要event,考虑这个function 的存在性！
 fn update_interest_rates(vars:&mut ReserveData, liquidity_added: u128,liquidity_token: u128){
-    let debttoken: IERC20 =  FromAccountId::from_account_id(vars.stable_debt_token_address);
+    let debttoken: IERC20 =  FromAccountId::from_account_id(vars.debt_token_address);
     //池的总数而不是个人！不过要验证是否正确用法！
-    let total_debttoken = debttoken.total_supply() * vars.variable_borrow_index;
+    let total_debttoken = debttoken.total_supply() * vars.borrow_index;
     
     //let (new_liquidity_rate, new_borrow_rate) = calculate_interest_rates(liquidity_added, liquidity_taken, total_debttoken, vars.reserve_factor);
     //确保new_liquidity_rate, new_borrow_rate没overflow
     let (new_liquidity_rate, new_borrow_rate) = (0,0);
 
     vars.liquidity_rate = new_liquidity_rate;
-    vars.stable_borrow_rate = new_borrow_rate;
+    vars.borrow_rate = new_borrow_rate;
 }
 
 //ting
 fn validate_liquidation_call(
     user_config:UserReserveData,
     user_health_factor: u128,
-    user_stable_debt: u128,
-    user_variable_debt: u128,
+    user_debt: u128,
 ) -> bool{
     //make sure both collateral_reserve and principal_reserve are active, otherwise return false
     if user_health_factor >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD{ return false;}
     // let is_collateral_enabled:bool = get_liquidation_threshold()>0 && is_using_as_collateral();
     let is_collateral_enabled:bool = false;
     if !is_collateral_enabled {return false;}
-    if user_stable_debt == 0 && user_variable_debt==0 {return false;}
+    if user_debt == 0{return false;}
     true
 }
-
-//改返回的方式？
-fn validate_rebalance_stable_borrow_rate(
-    //reserve:ReserveData, 
-    token:AccountId, s_token:AccountId){
-   
-}
-
-fn validate_repay(
-    reserve:ReserveData,
-    amount_sent:u128,
-    on_behalf_of:AccountId,
-    stable_debt:u128,
-    variable_debt:u128
-) {
-    //if amount_sent < 0 { return Error}
-
-    //make sure:
-    // stable_debt >0 && rate_mode == InterestRateMode.STABLE ||
-    // variable_debt >0 && rate_mode == InterestRateMode.VARIABLE
-
-    //if self.env().caller() != on_behalf_of { return Error}
-}
-
-//另加参数！ting
-fn validate_borrow(
-    asset:AccountId,
-    //reserve:ReserveData,
-    user_address:AccountId,
-    amount:u128,
-    amount_in_usd:u128,
-    max_stable_loan_percent:u128
-) {
-    //if amount == 0{ return Error}
-    
-    // if interest_rate_mode != core::InterestRateMode.STABLE || interest_rate_mode != core::InterestRateMode.VARIABLE {
-    //     return Error
-    // }
-
-}
-  //另加参数！ting
-fn validate_withdraw(
-    asset:AccountId,
-    amount:u128,
-    user_balance:u128,
-    reserve:ReserveData
-){
-    // make sure  amount != 0 && amount <= user_balance
-    // make sure the reserve is active
-    // then makw sure balance_decrease_allowed()
-}
 //ting
-fn validate_deposit(reserve:ReserveData, amount:u128){
-    // make sure amount != 0
-    // is_active
-}
+fn validate_rebalance_borrow_rate(reserve:ReserveData){}
 
-//ting
-fn _transfer(from:AccountId, to:AccountId, token:AccountId, amount:u128, validate:bool){
-  
-}
-//ting
-fn finalize_transfer(token:AccountId, from:AccountId, to:AccountId, amount:u128,from_balance_before:u128, to_balance_before:u128){
-}
 //要不要限定每个用户单次可借多少？？
 fn get_max_borrow_size_percent(){}
 fn set_reserve_configuratio(){}
 
 pub fn liquidation_call(r:ReserveData, collateral:AccountId, borrower:AccountId, debt_to_cover:u128, receive_s_token:bool){
     // let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
-    // let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.stable_debt_token_address);
+    // let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
     // let (_, _liquidation_threshold, _, _, _) =  = ReserveConfigurationData::get_params(&r);
     // vars.health_factor = calculate_health_factor_from_balance(stoken, debttoken, _liquidation_threshold)
-
 }
-
+//ting 把finalize_transfer加入
 fn transfer_on_liquidation(from:AccountId, to:AccountId, value:u128){}
-
+//ting
 pub fn caculate_available_collateral_to_liquidate(collateral:AccountId, debt_asset:AccountId, amoun_to_cover:u128, user_collateral_balance:u128) -> (u128, u128){
     let collateral_amount = 0;
     let debt_amount_needed = 0;
 
     (collateral_amount, debt_amount_needed)
 }
-//以下算述需考虑精位！
+//以下算述需考虑精位还有算法顺序！
 pub fn calculate_interest_rates(
     reserve:&ReserveData,
     vars:&mut InterestRateData,
@@ -238,11 +174,11 @@ pub fn calculate_interest_rates(
     borrow_rate:u128,
     reserve_factor:u128,
 ) -> (u128, u128) {
-    let mut stoken: IERC20 = FromAccountId::from_account_id(reserve.stoken_address);
+    let stoken: IERC20 = FromAccountId::from_account_id(reserve.stoken_address);
     let _available_liqudity = stoken.total_supply();
     let current_available_liqudity = _available_liqudity + liquidity_added - liquidity_taken;
 
-    let debttoken: IERC20 =  FromAccountId::from_account_id(reserve.stable_debt_token_address);
+    let debttoken: IERC20 =  FromAccountId::from_account_id(reserve.debt_token_address);
     let total_debt = debttoken.total_supply();
 
     let mut current_borrow_rate = 0;
@@ -257,9 +193,9 @@ pub fn calculate_interest_rates(
 
     if utilization_rate > vars.optimal_utilization_rate{
         let excess_utilization_rate_ratio = utilization_rate - vars.optimal_utilization_rate / vars.excess_utilization_rate;
-        current_borrow_rate = vars.base_stable_borrow_rate + vars.stable_rate_slope1 + vars.stable_rate_slope2 * excess_utilization_rate_ratio;
+        current_borrow_rate = vars.base_borrow_rate + vars.rate_slope1 + vars.rate_slope2 * excess_utilization_rate_ratio;
     } else {
-        current_borrow_rate = vars.base_stable_borrow_rate + utilization_rate * vars.stable_rate_slope1 / vars.optimal_utilization_rate;
+        current_borrow_rate = vars.base_borrow_rate + utilization_rate * vars.rate_slope1 / vars.optimal_utilization_rate;
     }
     if total_debt != 0 {
         current_liquidity_rate = total_debt / current_borrow_rate * utilization_rate * (1-reserve_factor);
