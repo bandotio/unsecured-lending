@@ -11,6 +11,11 @@ pub const ONE_YEAR:u128 = 365*24*60*60*1000; //david SECONDS_PER_YEAR
 pub const LIQUIDATION_CLOSE_FACTOR_PERCENT:u128 = 5 * 10_u128.saturating_pow(11); //50%
 pub const HEALTH_FACTOR_LIQUIDATION_THRESHOLD:u128 =1 * 10_u128.saturating_pow(12);
 
+/// The representation of the number one as a precise number as 10^12
+pub const ONE: u128 = 1_000_000_000_000;
+
+
+
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
 #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
 pub struct ReserveData {
@@ -26,6 +31,36 @@ pub struct ReserveData {
     pub reserve_factor: u128,
     pub liquidity_index: u128,
     pub last_updated_timestamp: u64,
+}
+
+impl ReserveData {
+    pub const BASE_LIQUIDITY_RATE: u128 = ONE / 100 * 10; // 10% 
+    pub const BASE_BORROW_RATE: u128 = ONE / 100 * 18; // 18%
+    pub const BASE_LIQUIDITY_INDEX: u128 = ONE; // 1
+
+    /// Create a new reserve
+    pub fn new(
+        stoken_address: AccountId,
+        debt_token_address: AccountId,
+        ltv: u128,
+        liquidity_threshold: u128,
+        liquidity_bonus: u128,
+        reserve_factor: u128,
+    ) -> ReserveData {
+        ReserveData {
+            BASE_LIQUIDITY_RATE,
+            BASE_BORROW_RATE,
+            stoken_address,
+            debt_token_address,
+            ltv,
+            liquidity_threshold,
+            liquidity_bonus,
+            12,
+            reserve_factor,
+            BASE_LIQUIDITY_INDEX,
+            Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
@@ -162,7 +197,7 @@ pub fn calculate_interest_rates(
         current_borrow_rate = reserve.borrow_rate + vars.rate_slope1 * (utilization_rate/ vars.optimal_utilization_rate);
     }
     if total_debt != 0 {//这种算法不知对不对！
-        current_liquidity_rate = borrow_rate  * utilization_rate * (1-reserve_factor);
+        current_liquidity_rate = borrow_rate  * utilization_rate * (ONE - reserve_factor);
     }
     vars.utilization_rate = utilization_rate;
     (current_liquidity_rate, current_borrow_rate)

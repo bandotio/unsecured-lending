@@ -81,20 +81,15 @@ mod lendingpool {
             optimal_utilization_rate:u128, base_borrow_rate: u128, 
             rate_slope1: u128, rate_slope2:u128,
         ) -> Self {
-            Self {//洋
-                reserve: ReserveData {
-                    liquidity_rate:10,
-                    borrow_rate: 18,
-                    stoken_address: stoken,
-                    debt_token_address: debt_token,
-                    ltv: ltv,
-                    liquidity_threshold: liquidity_threshold,//是随时变的？
-                    liquidity_bonus: liquidity_bonus,
-                    decimals: 12,
-                    reserve_factor: reserve_factor,
-                    liquidity_index:1, //这个需加12位0？
-                    last_updated_timestamp:Default::default(),
-                },
+            Self {
+                reserve: ReserveData::new(
+                    stoken,
+                    debt_token,
+                    ltv,
+                    liquidity_threshold,
+                    liquidity_bonus,
+                    reserve_factor,
+                ),
                 users_data: StorageHashMap::new(),
                 delegate_allowance: StorageHashMap::new(),
                 users_kyc_data: StorageHashMap::new(),
@@ -161,7 +156,7 @@ mod lendingpool {
 
         fn caculate_linear_interest(&self, last_updated_timestamp: u64) -> u128 {
             let time_difference = self.env().block_timestamp() - last_updated_timestamp;
-            let interest:u128 = 1 * self.reserve.liquidity_rate * time_difference as u128 / ONE_YEAR + 1; //need to be replaced by one
+            let interest: u128 = ONE * self.reserve.liquidity_rate * time_difference as u128 / ONE_YEAR + ONE; //need to be replaced by one
             interest
         }
 
