@@ -148,7 +148,14 @@ mod lendingpool {
         pub fn update_interest_rates(&mut self, liquidity_added: u128, liquidity_taken: u128){
             let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
             let total_debt = debttoken.total_supply();
-            let (new_liquidity_rate, new_borrow_rate) = calculate_interest_rates(&self.reserve, &mut self.interest_setting, liquidity_added, liquidity_taken, total_debt, self.reserve.borrow_rate, self.reserve.reserve_factor);
+            let (new_liquidity_rate, new_borrow_rate) = calculate_interest_rates(
+                &self.reserve, 
+                &mut self.interest_setting,
+                liquidity_added, 
+                liquidity_taken, 
+                total_debt, 
+                self.reserve.borrow_rate, 
+                self.reserve.reserve_factor);
             //确保new_liquidity_rate, new_borrow_rate没overflow
             self.reserve.liquidity_rate = new_liquidity_rate;
             self.reserve.borrow_rate = new_borrow_rate;
@@ -156,7 +163,7 @@ mod lendingpool {
 
         fn caculate_linear_interest(&self, last_updated_timestamp: u64) -> u128 {
             let time_difference = self.env().block_timestamp() - last_updated_timestamp;
-            let interest: u128 = ONE * self.reserve.liquidity_rate * time_difference as u128 / ONE_YEAR + ONE; //need to be replaced by one
+            let interest: u128 = self.reserve.liquidity_rate * time_difference as u128 / ONE_YEAR + ONE; //need to be replaced by one
             interest
         }
 
