@@ -13,7 +13,9 @@ pub const HEALTH_FACTOR_LIQUIDATION_THRESHOLD:u128 =1 * 10_u128.saturating_pow(1
 
 /// The representation of the number one as a precise number as 10^12
 pub const ONE: u128 = 1_000_000_000_000;
-
+pub const BASE_LIQUIDITY_RATE: u128 = ONE / 100 * 10; // 10% 
+pub const BASE_BORROW_RATE: u128 = ONE / 100 * 18; // 18%
+pub const BASE_LIQUIDITY_INDEX: u128 = ONE; // 1
 
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
@@ -34,9 +36,6 @@ pub struct ReserveData {
 }
 
 impl ReserveData {
-    pub const BASE_LIQUIDITY_RATE: u128 = ONE / 100 * 10; // 10% 
-    pub const BASE_BORROW_RATE: u128 = ONE / 100 * 18; // 18%
-    pub const BASE_LIQUIDITY_INDEX: u128 = ONE; // 1
 
     /// Create a new reserve
     pub fn new(
@@ -48,17 +47,17 @@ impl ReserveData {
         reserve_factor: u128,
     ) -> ReserveData {
         ReserveData {
-            BASE_LIQUIDITY_RATE,
-            BASE_BORROW_RATE,
-            stoken_address,
-            debt_token_address,
-            ltv,
-            liquidity_threshold,
-            liquidity_bonus,
-            12,
-            reserve_factor,
-            BASE_LIQUIDITY_INDEX,
-            Default::default(),
+            liquidity_rate: BASE_LIQUIDITY_RATE,
+            borrow_rate: BASE_BORROW_RATE,
+            stoken_address: stoken_address,
+            debt_token_address: debt_token_address,
+            ltv: ltv,
+            liquidity_threshold: liquidity_threshold,
+            liquidity_bonus: liquidity_bonus,
+            decimals: 12,
+            reserve_factor: reserve_factor,
+            liquidity_index: BASE_LIQUIDITY_INDEX,
+            last_updated_timestamp: Default::default(),
         }
     }
 }
