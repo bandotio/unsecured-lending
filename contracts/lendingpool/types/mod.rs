@@ -126,24 +126,22 @@ pub fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u1
     health_factor_after_decrease >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD
 }
 
-//ting
-pub fn validate_liquidation_call(user_config:UserReserveData,user_health_factor: u128, user_debt: u128) -> bool{
-    //make sure both collateral_reserve and principal_reserve are active, otherwise return false
-    if user_health_factor >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD{ return false;}
-    // let is_collateral_enabled:bool = get_liquidation_threshold()>0 && is_using_as_collateral();
-    let is_collateral_enabled:bool = false;
-    if !is_collateral_enabled {return false;}
-    if user_debt == 0{return false;}
-    true
-}
-
-//ting 把finalize_transfer加入
-pub fn transfer_on_liquidation(from:AccountId, to:AccountId, value:u128){}
-
-//ting
-pub fn caculate_available_collateral_to_liquidate(amoun_to_cover:u128, user_collateral_balance:u128) -> (u128, u128){
-    let collateral_amount = 0;
-    let debt_amount_needed = 0;
+//大家可思考下！
+pub fn caculate_available_collateral_to_liquidate(vars:&ReserveData, debt_to_cover:u128, user_collateral_balance:u128) -> (u128, u128){
+    let mut collateral_amount = 0;
+    let mut debt_amount_needed = 0;
+    //let unit_price = self.env().extension().fetch_price();
+    let dot_unit_price = 16;//小数点！
+    let debt_asset_price = 1; //这个不是debttoken吗？为什么需要价格？？和index有关？todo
+    //这个算式有待验证！
+    let max_amount_collateral_to_liquidate = debt_asset_price * debt_to_cover * vars.liquidity_bonus / dot_unit_price;
+    if max_amount_collateral_to_liquidate > user_collateral_balance {
+        collateral_amount = user_collateral_balance;
+        debt_amount_needed = dot_unit_price * collateral_amount / debt_asset_price / vars.liquidity_bonus;
+    } else {
+        collateral_amount = max_amount_collateral_to_liquidate;
+        debt_amount_needed = debt_to_cover;
+    }
     (collateral_amount, debt_amount_needed)
 }
 

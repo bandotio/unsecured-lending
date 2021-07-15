@@ -61,6 +61,17 @@ mod lendingpool {
         #[ink(topic)]
         amount: Balance,
     }
+    #[ink(event)]
+    pub struct Liquidation {
+        #[ink(topic)]
+        liquidator: AccountId,
+        #[ink(topic)]
+        liquidatee: AccountId,
+        #[ink(topic)]
+        amount_to_recover: Balance,
+        #[ink(topic)]
+        received_amount: Balance,
+    }
 
     #[ink(storage)]
     pub struct Lendingpool {
@@ -402,14 +413,26 @@ mod lendingpool {
         }
         //ting
         #[ink(message)]
-        pub fn liquidation_call(&self, borrower:AccountId, debt_to_cover:u128, receive_s_token:bool){
+        pub fn liquidation_call(&mut self, borrower:AccountId, debt_to_cover:u128, receive_s_token:bool){
+            let liquidator = self.env().caller();
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
 
-            let user_total_debt = 0; //todo
+            let user_total_debt = 10; //todo
             let user_total_balance = 0;//todo
             let health_factor = calculate_health_factor_from_balance(user_total_balance, user_total_debt, self.reserve.liquidity_threshold);
-            //validate
+
+            assert!(
+                health_factor <= HEALTH_FACTOR_LIQUIDATION_THRESHOLD, 
+                "{}",
+                VL_HEALTH_FACTOR_LOWER_THAN_LIQUIDATION_THRESHOLD
+            );
+            assert!(
+                user_total_debt > 0, 
+                "{}",
+                LPCM_SPECIFIED_CURRENCY_NOT_BORROWED_BY_USER
+            );
+
             let max_liquidatable_debt = user_total_debt * LIQUIDATION_CLOSE_FACTOR_PERCENT;
             let mut actual_debt_to_liquidate = 0;
             if debt_to_cover > max_liquidatable_debt {
@@ -417,8 +440,37 @@ mod lendingpool {
             } else {
                 actual_debt_to_liquidate = debt_to_cover
             }
-            let (max_collateral_to_liquidate, debt_amount_needed) = caculate_available_collateral_to_liquidate(actual_debt_to_liquidate, user_total_balance);
-            
+            let (max_collateral_to_liquidate, debt_amount_needed) = caculate_available_collateral_to_liquidate(&self.reserve, actual_debt_to_liquidate, user_total_balance);
+            if debt_amount_needed < actual_debt_to_liquidate {
+                actual_debt_to_liquidate = debt_amount_needed;
+            }
+
+            if !receive_s_token {
+                //todo 看平台上的dot总数是多少
+                let available_dot = 0; 
+                assert!(
+                    available_dot > max_collateral_to_liquidate, 
+                    "{}",
+                    LPCM_NOT_ENOUGH_LIQUIDITY_TO_LIQUIDATE
+                );
+            }
+           // update_state()
+           //burn 借款人的debttoken，数量是ctualDebtToLiquidate
+           self.update_interest_rates(actual_debt_to_liquidate,0);
+           if receive_s_token{
+               //todo 看清算者sender自身的stoken数量
+               //transfer_on_liquidation() 把user的stoken转到清算者那？
+               // update_state()
+               self.update_interest_rates(0,max_collateral_to_liquidate);
+           }
+           //transfer_on_liquidation
+
+           self.env().emit_event(Liquidation {
+            liquidator,
+            liquidatee: borrower,
+            amount_to_recover:actual_debt_to_liquidate,
+            received_amount: 0, //todo
+        });
         }
     }
 }
