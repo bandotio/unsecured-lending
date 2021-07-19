@@ -25,6 +25,8 @@ Get help information
 `$ npx redspot help`
 
 # Updates
+For the most updated codes, please refer to the delegate branch :)
+
  We have created a simple credit delegation loan system by using the a rough KYC verification.
 
 Try it from our test network: https://lend.bandot.io/
