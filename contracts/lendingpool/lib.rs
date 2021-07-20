@@ -123,12 +123,11 @@ mod lendingpool {
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
             self.update_state();
             self.update_interest_rates(amount, 0);
-
             let mut stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let entry = self.users_data.entry(receiver);
             let user_reserve_data = entry.or_insert(Default::default());
             user_reserve_data.last_update_timestamp = Self::env().block_timestamp();
-
+            //考虑要不要加interest
             assert!(stoken.mint(receiver, amount).is_ok());         
             self.env().emit_event(Deposit {
                 user: sender,
@@ -182,7 +181,7 @@ mod lendingpool {
             let interest = rate_per_second * time_difference + 1 + second_term + third_term;
             interest
         }
-        //大家考虑下这个算法对不对
+        //double check
         fn update_indexes(&mut self, timestamp:u64, liquidity_index:u128) ->  u128{
             let current_liquidity_rate = self.reserve.liquidity_rate;
             let mut new_liquidity_index = liquidity_index;        
@@ -198,10 +197,9 @@ mod lendingpool {
         fn update_state(&mut self){
             let previous_liquidity_index = self.reserve.liquidity_index;
             let last_updated_timestamp = self.reserve.last_updated_timestamp;
-            let new_liquidity_index = 
-            self.update_indexes(last_updated_timestamp, previous_liquidity_index);
+            let new_liquidity_index = self.update_indexes(last_updated_timestamp, previous_liquidity_index);
         }
-        //ting欠的利息怎么导出
+        
         #[ink(message)]
         pub fn withdraw(&mut self, amount: Balance, to: Option<AccountId>) {
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
@@ -212,23 +210,24 @@ mod lendingpool {
             }
             let mut stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
-            //let user_balance = stoken.balance_of(sender) - debttoken.balance_of(sender);
             let reserve_data = self.users_data.get_mut(&sender).expect("user config does not exist");
-            //let interval = Self::env().block_timestamp() - reserve_data.last_update_timestamp;
-            // let interest = user_balance * interval as u128 * self.reserve.liquidity_rate
-            //     / (100 * 365 * 24 * 3600 * 1000);
-            //let interest = self.get_normalized_income();//这里用这个来算对不对？david
+            //let interest = self.get_normalized_income();//这里用这个来算？david
+            let debt_interest = 0;//todo 怎么算！david
             let interest = 10;
             if interest > 0 {
                 reserve_data.cumulated_liquidity_interest += interest;
-                reserve_data.last_update_timestamp = Self::env().block_timestamp();
-            }
-            //keeping.但是debttoken？
-            let cur_user_balance = stoken.balance_of(receiver)  - debttoken.balance_of(receiver) + reserve_data.cumulated_liquidity_interest;
+                reserve_data.cumulated_borrow_interest += debt_interest;
+                //reserve_data.last_update_timestamp = Self::env().block_timestamp();
+            }            
+            let available_user_balance = stoken.balance_of(receiver)  - debttoken.balance_of(receiver) + reserve_data.cumulated_liquidity_interest - reserve_data.cumulated_borrow_interest;
             assert!(
-                amount <= cur_user_balance,
+                amount <= available_user_balance,
                 "{}",
                 VL_NOT_ENOUGH_AVAILABLE_USER_BALANCE
+            );
+            assert!(balance_decrease_allowed(&mut self.reserve, sender, amount),
+                "{}",
+                VL_TRANSFER_NOT_ALLOWED
             );
             if amount <= reserve_data.cumulated_liquidity_interest {
                 reserve_data.cumulated_liquidity_interest -= amount;
@@ -237,18 +236,17 @@ mod lendingpool {
                 reserve_data.cumulated_liquidity_interest = 0;
                 stoken.burn(sender, rest).expect("sToken burn failed");
             }
-            assert!(balance_decrease_allowed(&mut self.reserve, sender, amount),
-                "{}",
-                VL_TRANSFER_NOT_ALLOWED
-            );
-            self.env().transfer(receiver, amount).expect("transfer failed"); 
+            reserve_data.last_update_timestamp = Self::env().block_timestamp();
+            // self.update_state();
+            // self.update_interest_rates(0, amount);
+            self.env().transfer(receiver, amount).expect("transfer failed"); //这个是把dot转走！
             self.env().emit_event(Withdraw {
                 user: sender,
                 to: receiver,
                 amount,
             });
         }
-        //ting
+        
         #[ink(message)]
         pub fn borrow(&mut self, amount: Balance, on_behalf_of: AccountId) {
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
@@ -256,52 +254,33 @@ mod lendingpool {
             let receiver = on_behalf_of;
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut dtoken: IERC20 =FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let reserve_data = self.users_data.get_mut(&sender).expect("user config does not exist");
+
             //let unit_price = self.env().extension().fetch_price();
             let unit_price = 16;//小数点！
             let amount_in_usd = unit_price * amount;
 
-            //keeping,如何跟以下liquidation_threshold结合，也就是delegate上也算上stoken！
             //本来要加max_borrow_size_percent,考虑到初期这里太多限制，不加了
             let credit_balance = self.delegate_allowance.get(&(receiver, sender)).copied().unwrap_or(0);
-            let _credit_balance = credit_balance + amount;
+            //let interest = self.get_normalized_income();//这里用这个来算？david
+            let debt_interest = 0;//todo 怎么算！david
+            let interest = 10;
+            if interest > 0 {//如果receiver和sender不一样要重加
+                reserve_data.cumulated_liquidity_interest += interest;
+                reserve_data.cumulated_borrow_interest += debt_interest;
+                //reserve_data.last_update_timestamp = Self::env().block_timestamp();
+            }        
+            //let reserve_data = self.users_data.get_mut(&receiver).expect("user config does not exist");
+            // let entry_sender = self.users_data.entry(sender);
+            // let reserve_data_sender = entry_sender.or_insert(Default::default());
+
+            let _credit_balance = stoken.balance_of(&sender)  - debttoken.balance_of(&sender) + reserve_data.cumulated_liquidity_interest - reserve_data.cumulated_borrow_interest;
             assert!(
                 amount <= _credit_balance, 
                 "{}",
                 VL_NOT_ENOUGH_AVAILABLE_USER_BALANCE
             );
-            // 需要考虑两种interest?
-            let liquidation_threshold = stoken.balance_of(receiver)  - dtoken.balance_of(receiver);
-            assert!(
-                amount <= liquidation_threshold,
-                "{}",
-                LP_NOT_ENOUGH_LIQUIDITY_TO_BORROW
-            );
-            //记得这里是receiver
-            let reserve_data = self.users_data.get_mut(&receiver).expect("user config does not exist");
-            //let interval = Self::env().block_timestamp() - reserve_data.last_update_timestamp;
-            //let user_balance = stoken.balance_of(receiver) - dtoken.balance_of(receiver) ;
-            //let interest = user_balance * interval as u128 * self.reserve.liquidity_rate/ (100 * 365 * 24 * 3600 * 1000);
-
-            //let interest = self.get_normalized_income();//这里用这个来算对不对？david
-            let interest = 10;
-            reserve_data.cumulated_liquidity_interest += interest;
-            reserve_data.last_update_timestamp = Self::env().block_timestamp();
-            //记得这里是sender
-            let entry_sender = self.users_data.entry(sender);
-            let reserve_data_sender = entry_sender.or_insert(Default::default());
-            let interval = Self::env().block_timestamp() - reserve_data_sender.last_update_timestamp;
-            //这里的计算方式需重新写
-            reserve_data_sender.cumulated_borrow_interest += reserve_data_sender
-                .borrow_balance
-                * interval as u128
-                * self.reserve.borrow_rate
-                / (100 * 365 * 24 * 3600 * 1000);
-            reserve_data_sender.borrow_balance += amount;
-            reserve_data_sender.last_update_timestamp = Self::env().block_timestamp();
-            self.delegate_allowance.insert((receiver, sender), credit_balance - amount);
-            assert!(dtoken.mint(receiver, amount).is_ok());            
-            self.env().transfer(sender, amount).expect("transfer failed");//没说明什么币？
-            //这里要用balance_decrease_allowed？
+            //这里要用balance_decrease_allowed
             let health_factor_after_decrease = 10;
             assert!(
                 health_factor_after_decrease >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD, 
@@ -309,8 +288,13 @@ mod lendingpool {
                 VL_HEALTH_FACTOR_LOWER_THAN_LIQUIDATION_THRESHOLD
             );
 
+            self.delegate_allowance.insert((receiver, sender), credit_balance - amount);
+            assert!(dtoken.mint(receiver, amount).is_ok());            
+            self.env().transfer(sender, amount).expect("transfer failed");//没说明什么币？
+            //要更新双方user_reserve_date,如果receiver和sender
+
             self.update_state();
-            self.update_interest_rates(0, amount);
+            self.update_interest_rates(0, amount);//这个要考虑是不是要两个，因为是双方！
             self.env().emit_event(Borrow {
                 user: sender,
                 on_behalf_of,
@@ -324,27 +308,25 @@ mod lendingpool {
             let recevier = on_behalf_of;
             let amount = self.env().transferred_balance();
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
-
             let mut dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
             let reserve_data_sender = self.users_data.get_mut(&sender).expect("you have not borrow any dot");
-            let interval = Self::env().block_timestamp() - reserve_data_sender.last_update_timestamp;
-            //这里的计算方式需重新写
-            reserve_data_sender.cumulated_borrow_interest += reserve_data_sender
-                .borrow_balance
-                * interval as u128
-                * self.reserve.borrow_rate
-                / (100 * 365 * 24 * 3600 * 1000);
-            reserve_data_sender.borrow_balance -= amount;
-            reserve_data_sender.last_update_timestamp = Self::env().block_timestamp();
 
+            //let interest = self.get_normalized_income();//这里用这个来算？david
+            let debt_interest = 0;//todo 怎么算！david
+            if interest > 0 {
+                reserve_data.cumulated_liquidity_interest += interest;
+                reserve_data.cumulated_borrow_interest += debt_interest;
+                //reserve_data.last_update_timestamp = Self::env().block_timestamp();
+            }
             if amount <= reserve_data_sender.cumulated_borrow_interest {
                 reserve_data_sender.cumulated_borrow_interest -= amount
             } else {
                 let rest = amount - reserve_data_sender.cumulated_borrow_interest;
                 reserve_data_sender.cumulated_borrow_interest = 0;
+                reserve_data_sender.borrow_balance -= amount;
                 dtoken.burn(recevier, rest).expect("debt token burn failed");
             }
-
+            reserve_data.last_update_timestamp = Self::env().block_timestamp();
             self.update_state();
             self.update_interest_rates(amount,0);
             self.env().emit_event(Repay {
@@ -462,6 +444,7 @@ mod lendingpool {
             stoken.burn(borrower, max_collateral_to_liquidate).expect("stoken burn failed");
             //transfer  max_collateral_to_liquidate dot back to liqudator
            }
+           //这里要加两个interest的更新
            borrower_data.borrow_balance -= actual_debt_to_liquidate;
            borrower_data.last_update_timestamp = Self::env().block_timestamp();
            self.env().emit_event(Liquidation {
