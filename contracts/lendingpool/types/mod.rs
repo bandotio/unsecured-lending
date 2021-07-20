@@ -32,7 +32,6 @@ pub struct ReserveData {
     pub liquidity_threshold: u128,
     pub liquidity_bonus: u128,
     pub decimals: u128,
-    pub reserve_factor: u128,
     pub liquidity_index: u128,
     pub last_updated_timestamp: u64,
 }
@@ -45,7 +44,6 @@ impl ReserveData {
         ltv: u128,
         liquidity_threshold: u128,
         liquidity_bonus: u128,
-        reserve_factor: u128,
     ) -> ReserveData {
         ReserveData {
             liquidity_rate: BASE_LIQUIDITY_RATE,
@@ -56,7 +54,6 @@ impl ReserveData {
             liquidity_threshold: liquidity_threshold,
             liquidity_bonus: liquidity_bonus,
             decimals: 12,
-            reserve_factor: reserve_factor,
             liquidity_index: BASE_LIQUIDITY_INDEX,
             last_updated_timestamp: Default::default(),
         }
@@ -103,42 +100,41 @@ fn calculate_available_borrows_in_usd(total_collateral_in_usd:u128, total_debt_i
     available_borrows_in_usd
 } 
 
-//大家可思考下！
+//double check
 pub fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u128) -> bool{
     let debttoken: IERC20 =  FromAccountId::from_account_id(vars.debt_token_address);
     let stoken: IERC20 = FromAccountId::from_account_id(vars.stoken_address);
     if debttoken.balance_of(user) == 0 {return true;}
     if vars.liquidity_threshold == 0 {return true;}
-    //david dot 的单价
     //let unit_price = self.env().extension().fetch_price();
     let unit_price = 16;//小数点！
-    //这里就该要表示dot的数量！这个公式是stoken是己有index的功能的情况下成立，不然要加个index!!!
+    //这里就该要表示dot的数量！这个公式是stoken是己有index的功能的情况下成立，不然要加个index!!!还要加interest
     let _total_collateral_in_usd = unit_price * stoken.balance_of(user);
-
+    //这里debttoken下估计需要加上用户要付的利息？还有1debttoken=1dot的价？？？
+    let _total_debt_in_usd = unit_price * debttoken.balance_of(user);
     let amount_to_decrease_in_usd = unit_price * amount;
     let collateral_balance_after_decrease_in_usd = _total_collateral_in_usd - amount_to_decrease_in_usd;
-    //这里就是healthfactor的功能，只是余额到少要大于0
+    //这个不知要不要留
     if collateral_balance_after_decrease_in_usd == 0 {return false;}
-    //大家看下这个公式在单币下make sense??
+    //这个公式需被double check，顺序和算法也是！
     let liquidity_threshold_after_decrease = 
     _total_collateral_in_usd * vars.liquidity_threshold - (amount_to_decrease_in_usd*vars.liquidity_threshold)/collateral_balance_after_decrease_in_usd;
-    //需要确保参数的正确性！！比如这里debttoken下估计需要加上用户要付的利息？！！
     let health_factor_after_decrease = calculate_health_factor_from_balance(
         collateral_balance_after_decrease_in_usd,
-        debttoken.balance_of(user),
+        _total_debt_in_usd,
         liquidity_threshold_after_decrease
     );
     health_factor_after_decrease >= HEALTH_FACTOR_LIQUIDATION_THRESHOLD
 }
 
-//大家可思考下！
+//double check
 pub fn caculate_available_collateral_to_liquidate(vars:&ReserveData, debt_to_cover:u128, user_collateral_balance:u128) -> (u128, u128){
     let mut collateral_amount = 0;
     let mut debt_amount_needed = 0;
     //let unit_price = self.env().extension().fetch_price();
     let dot_unit_price = 16;//小数点！
-    let debt_asset_price = 1; //这个不是debttoken吗？为什么需要价格？？和index有关？todo
-    //这个算式有待验证！
+    let debt_asset_price = 1; //这个要的估计是index
+    //这个算式要double check
     let max_amount_collateral_to_liquidate = debt_asset_price * debt_to_cover * vars.liquidity_bonus / dot_unit_price;
     if max_amount_collateral_to_liquidate > user_collateral_balance {
         collateral_amount = user_collateral_balance;
@@ -150,15 +146,14 @@ pub fn caculate_available_collateral_to_liquidate(vars:&ReserveData, debt_to_cov
     (collateral_amount, debt_amount_needed)
 }
 
-//以下算述需考虑精位还有算法顺序！因为算法的复杂性，还要考虑用不用后面！
+//以下算述需考虑精位还有算法顺序！因为算法的复杂性，还要double check！
 pub fn calculate_interest_rates(
     reserve:&ReserveData,
     vars:&mut InterestRateData,
     liquidity_added:u128,
     liquidity_taken:u128,
     total_debt:u128,
-    borrow_rate:u128,
-    reserve_factor:u128,
+    borrow_rate:u128
 ) -> (u128, u128) {
     let stoken: IERC20 = FromAccountId::from_account_id(reserve.stoken_address);
     let _available_liqudity = stoken.total_supply();
@@ -177,8 +172,9 @@ pub fn calculate_interest_rates(
     } else {
         current_borrow_rate = reserve.borrow_rate + vars.rate_slope1 * (utilization_rate/ vars.optimal_utilization_rate);
     }
-    if total_debt != 0 {//这种算法不知对不对！
-        current_liquidity_rate = borrow_rate  * utilization_rate * (ONE - reserve_factor);
+    if total_debt != 0 {//这种算法有待验证！
+        current_liquidity_rate = borrow_rate  * utilization_rate;
+
     }
     vars.utilization_rate = utilization_rate;
     (current_liquidity_rate, current_borrow_rate)
