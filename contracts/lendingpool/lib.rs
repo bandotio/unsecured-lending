@@ -181,7 +181,6 @@ mod lendingpool {
             });
         }
 
-        //这段时间的个数乘以每个的净值= 一个reserve unit加上时间段内的利润最后能赚几个unit
         pub fn get_normalized_income(&self) -> u128 {
             let timestamp = self.reserve.last_updated_timestamp; 
             if timestamp == self.env().block_timestamp() {
@@ -242,8 +241,7 @@ mod lendingpool {
             let mut new_liquidity_index = liquidity_index;        
             if current_liquidity_rate > 0 {
                 let cumulated_liquidity_interest = self.caculate_linear_interest(timestamp);
-                new_liquidity_index *= cumulated_liquidity_interest;//这个算法不对？应该是+
-                //todo new_liquidity_index overflow//洋
+                new_liquidity_index *= cumulated_liquidity_interest;
                 self.reserve.liquidity_index = new_liquidity_index;                       
             }
             self.reserve.last_updated_timestamp = self.env().block_timestamp();
@@ -307,8 +305,6 @@ mod lendingpool {
             // self.update_state();
             self.update_interest_rates(0, amount);
 
-            //你可以把lending pool想象成一个账户，这个账户由合约编写者掌握，但是我们没有他的私钥，所以
-            //通过self.env()和这个账户沟通，在进行完计算和检查后，我们可以通过transfer将合约账户里的钱转给用户
             self.env().transfer(receiver, amount).expect("transfer failed"); 
             
             self.env().emit_event(Withdraw {
@@ -336,7 +332,6 @@ mod lendingpool {
             let receiver = on_behalf_of;
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut dtoken: IERC20 =FromAccountId::from_account_id(self.reserve.debt_token_address);
-            
 
             //let unit_price = self.env().extension().fetch_price();
             let unit_price = 16;//小数点！
@@ -429,16 +424,33 @@ mod lendingpool {
             });
         }
 
-        // pub fn get_reserve_data(vars: &ReserveData) -> (u128, u128, u128, u128, u128){
-        //     return (vars.ltv, vars.liquidity_threshold, vars.liquidity_bonus, vars.decimals, vars.reserve_factor)
-        // }
-        // pub fn get_user_reserve_data(&self, user: AccountId) -> Option<UserReserveData> {
-        //     self.users_data.get(&user).cloned()
-        // }
-        // pub fn get_interest_rate_data(){}      
-        // pub fn get_max_borrow_size_percent(){}
-        // pub fn set_reserve_configuration(){}
-        // pub fn set_interest_rate_data(){}
+        #[ink(message)]
+        pub fn get_reserve_data(&self) -> (u128,u128,u128,u128) {
+            (self.reserve.ltv, self.reserve.liquidity_threshold, self.reserve.liquidity_bonus, self.reserve.decimals)
+        }
+
+        #[ink(message)]
+        pub fn get_user_reserve_data(&self, user: AccountId) -> UserReserveData {
+            *self.users_data.get(&user).unwrap()
+        }
+        
+        #[ink(message)]
+        pub fn get_interest_rate_data(&self) -> (u128,u128,u128,u128,u128) {
+            (self.interest_setting.optimal_utilization_rate, self.interest_setting.excess_utilization_rate, self.interest_setting.rate_slope1, self.interest_setting.rate_slope2, self.interest_setting.utilization_rate)
+        }
+
+        pub fn set_reserve_configuration(&mut self, ltv: u128, liquidity_threshold: u128, liquidity_bonus: u128, decimals: u128){
+            self.reserve.ltv = ltv;
+            self.reserve.liquidity_threshold = liquidity_threshold;
+            self.reserve.liquidity_bonus = liquidity_bonus;
+            self.reserve.decimals = decimals;
+        }
+
+        pub fn set_interest_rate_data(&mut self, optimal_utilization_rate:u128, rate_slope1: u128, rate_slope2:u128){
+            self.interest_setting.optimal_utilization_rate = optimal_utilization_rate;
+            self.interest_setting.rate_slope1 = rate_slope1;
+            self.interest_setting.rate_slope2 = rate_slope2;      
+        }        
 
         /**
          * @dev delgator can delegate some their own credits which get by deposit funds to delegatee
@@ -448,7 +460,6 @@ mod lendingpool {
         #[ink(message)]
         pub fn delegate(&mut self, delegatee: AccountId, amount: Balance) {
             let delegator = self.env().caller();
-            //这里考虑要delegate 时要不要mint debetoken
             self.delegate_allowance
                 .insert((delegator, delegatee), amount);
         }

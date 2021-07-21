@@ -200,7 +200,7 @@ pub fn calculate_interest_rates(
         let excess_utilization_rate_ratio = utilization_rate - vars.optimal_utilization_rate / vars.excess_utilization_rate;
         current_borrow_rate = reserve.borrow_rate + vars.rate_slope1 + vars.rate_slope2 * excess_utilization_rate_ratio;
     } else {
-        current_borrow_rate = reserve.borrow_rate + vars.rate_slope1 * (utilization_rate/ vars.optimal_utilization_rate);
+        current_borrow_rate = reserve.borrow_rate + vars.rate_slope1 * (utilization_rate / vars.optimal_utilization_rate);
     }
     if total_debt != 0 {//这种算法有待验证！
         current_liquidity_rate = borrow_rate  * utilization_rate;
