@@ -12,6 +12,12 @@ mod lendingpool {
     use ink_prelude::{vec, vec::Vec};
     use ink_storage::collections::HashMap as StorageHashMap;
 
+    /**
+     * @dev Emitted on Deposit()
+     * @param user The address initiating the deposit
+     * @param on_behalf_of The beneficiary of the deposit, receiving the sTokens
+     * @param amount The amount deposited
+     **/
     #[ink(event)]
     pub struct Deposit {
         #[ink(topic)]
@@ -22,6 +28,12 @@ mod lendingpool {
         amount: Balance,
     }
 
+    /**
+     * @dev Emitted on Withdraw()
+     * @param user The address initiating the withdrawal, owner of sTokens
+     * @param to Address that will receive the underlying
+     * @param amount The amount to be withdrawn
+     **/
     #[ink(event)]
     pub struct Withdraw {
         #[ink(topic)]
@@ -32,6 +44,12 @@ mod lendingpool {
         amount: Balance,
     }
     
+    /**
+     * @dev Emitted on Borrow() when debt needs to be opened
+     * @param user The address of the user initiating the borrow(), receiving the funds on borrow()
+     * @param on_behalf_of The address that will be getting the debt
+     * @param amount The amount borrowed out
+     **/    
     #[ink(event)]
     pub struct Borrow {
         #[ink(topic)]
@@ -41,7 +59,13 @@ mod lendingpool {
         #[ink(topic)]
         amount: Balance,
     }
-   
+
+    /**
+     * @dev Emitted on Repay()
+     * @param receiver The beneficiary of the repayment, getting his debt reduced
+     * @param repayer The address of the user initiating the repay(), providing the funds
+     * @param amount The amount repaid
+     **/    
     #[ink(event)]
     pub struct Repay {
         #[ink(topic)]
@@ -52,6 +76,12 @@ mod lendingpool {
         amount: Balance,
     }
     
+    /**
+     * @dev emitted on Delegate()
+     * @param delegator  who have money and allow delegatee use it as collateral
+     * @param delegatee who can borrow money from pool without collateral
+     * @param amount the amount
+     **/    
     #[ink(event)]
     pub struct Delegate {
         #[ink(topic)]
@@ -61,6 +91,14 @@ mod lendingpool {
         #[ink(topic)]
         amount: Balance,
     }
+   
+    /**
+     * @dev emitted on Liquidation() when a borrower is liquidated.
+     * @param liquidator The address of the liquidator
+     * @param liquidatee The address of the borrower getting liquidated
+     * @param amount_to_recover The debt amount of borrowed `asset` the liquidator wants to cover
+     * @param received_amount The amount of collateral received by the liiquidator     
+     **/    
     #[ink(event)]
     pub struct Liquidation {
         #[ink(topic)]
@@ -111,7 +149,14 @@ mod lendingpool {
                 },
             }
         }
-       
+
+       /**
+        * @dev Deposits an `amount` of underlying asset into the reserve, receiving in return overlying sTokens.
+        * - E.g. User deposits 100 DOT and gets in return 100 sDOT
+        * @param onBehalfOf The address that will receive the sTokens, same as msg.sender if the user
+        *   wants to receive them on his own wallet, or a different address if the beneficiary of sTokens
+        *   is a different wallet
+        **/      
         #[ink(message, payable)]
         pub fn deposit(&mut self, on_behalf_of: Option<AccountId>) {
             let sender = self.env().caller();
@@ -211,6 +256,15 @@ mod lendingpool {
         //     let new_liquidity_index = self.update_indexes(last_updated_timestamp, previous_liquidity_index);
         // }
         
+       /**
+        * @dev Withdraws an `amount` of underlying asset from the reserve, burning the equivalent sTokens owned
+        * E.g. User has 100 sDOT, calls withdraw() and receives 100 DOT, burning the 100 sDOT
+        * @param amount The underlying amount to be withdrawn
+        *   - Send the value type(uint256).max in order to withdraw the whole sToken balance
+        * @param to Address that will receive the underlying, same as msg.sender if the user
+        *   wants to receive it on his own wallet, or a different address if the beneficiary is a
+        *   different wallet
+        **/        
         #[ink(message)]
         pub fn withdraw(&mut self, amount: Balance, to: Option<AccountId>) {
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
@@ -263,7 +317,18 @@ mod lendingpool {
                 amount,
             });
         }
-        
+
+       /**
+        * @dev Allows users to borrow a specific `amount` of the reserve underlying asset, provided that the borrower
+        * already deposited enough collateral, or he was given enough allowance by a credit delegator on the
+        * corresponding debt token
+        * - E.g. User borrows 100 DOT passing as `onBehalfOf` his own address, receiving the 100 DOT in his wallet
+        *   and 100 debt tokens
+        * @param amount The amount to be borrowed
+        * @param onBehalfOf Address of the user who will receive the debt. Should be the address of the borrower itself
+        * calling the function if he wants to borrow against his own collateral, or the address of the credit delegator
+        * if he has been given credit delegation allowance
+        **/        
         #[ink(message)]
         pub fn borrow(&mut self, amount: Balance, on_behalf_of: AccountId) {
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
@@ -321,6 +386,14 @@ mod lendingpool {
             });
         }
 
+       /**
+        * @notice Repays a borrowed `amount` on a specific reserve, burning the equivalent debt tokens owned
+        * - E.g. User repays 100 DOT, burning 100 debt tokens of the `onBehalfOf` address
+        * - Send the value type(uint256).max in order to repay the whole debt for `asset` on the specific `debtMode`
+        * @param onBehalfOf Address of the user who will get his debt reduced/removed. Should be the address of the
+        * user calling the function if he wants to reduce/remove his own debt, or the address of any other
+        * other borrower whose debt should be removed
+        **/        
         #[ink(message, payable)]
         pub fn repay(&mut self, on_behalf_of: AccountId) {
             let sender = self.env().caller();
@@ -367,6 +440,11 @@ mod lendingpool {
         // pub fn set_reserve_configuration(){}
         // pub fn set_interest_rate_data(){}
 
+        /**
+         * @dev delgator can delegate some their own credits which get by deposit funds to delegatee
+         * @param delegatee who can borrow without collateral
+         * @param amount
+         */        
         #[ink(message)]
         pub fn delegate(&mut self, delegatee: AccountId, amount: Balance) {
             let delegator = self.env().caller();
@@ -411,6 +489,15 @@ mod lendingpool {
             self.users_kyc_data.get(&user).cloned()
         }
 
+       /**
+        * @dev Function to liquidate a non-healthy position collateral-wise, with Health Factor below 1
+        * - The caller (liquidator) covers `debt_to_cover` amount of debt of the user getting liquidated, and receives
+        *   a proportionally amount of the `collateralAsset` plus a bonus to cover market risk
+        * @param borrower The address of the borrower getting liquidated
+        * @param debt_to_cover The debt amount of borrowed `asset` the liquidator wants to cover
+        * @param receive_s_token `true` if the liquidators wants to receive the collateral aTokens, `false` if he wants
+        * to receive the underlying collateral asset directly
+        **/        
         #[ink(message)]
         pub fn liquidation_call(&mut self, borrower:AccountId, debt_to_cover:u128, receive_s_token:bool){
             let liquidator = self.env().caller();
