@@ -118,6 +118,7 @@ mod lendingpool {
         delegate_allowance: StorageHashMap<(AccountId, AccountId), Balance>,
         users_kyc_data: StorageHashMap<AccountId, UserKycData>,
         interest_setting: InterestRateData,
+        users: StorageHashMap<AccountId,u8>, //accountid -> 1/0 
     }
 
     impl Lendingpool {  
@@ -135,7 +136,8 @@ mod lendingpool {
                     debt_token,
                     ltv,
                     liquidity_threshold,
-                    liquidity_bonus
+                    liquidity_bonus,
+                    
                 ),
                 users_data: StorageHashMap::new(),
                 delegate_allowance: StorageHashMap::new(),
@@ -147,6 +149,8 @@ mod lendingpool {
                     rate_slope2: rate_slope2,
                     utilization_rate: Default::default(),
                 },
+                users: Default::default(),
+            
             }
         }
 
@@ -164,6 +168,7 @@ mod lendingpool {
             if let Some(behalf) = on_behalf_of {
                 receiver = behalf;
             }
+           
             let amount = self.env().transferred_balance();
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
 
@@ -173,7 +178,8 @@ mod lendingpool {
             let user_reserve_data = entry.or_insert(Default::default());
             user_reserve_data.last_update_timestamp = Self::env().block_timestamp();
 
-            assert!(stoken.mint(receiver, amount).is_ok());         
+            assert!(stoken.mint(receiver, amount).is_ok());
+            self.users.insert(receiver,1);        
             self.env().emit_event(Deposit {
                 user: sender,
                 on_behalf_of: receiver,
@@ -572,10 +578,44 @@ mod lendingpool {
             received_amount: max_collateral_to_liquidate,
         });
         }
-        //david
+        //
         #[ink(message)]
-        pub fn is_user_reserve_healthy(&self, user: AccountId) -> bool{ true }
+        pub fn is_user_reserve_healthy(&self, user: AccountId) -> bool{
+            let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+            //TODO: let unit_price = self.env().extension().fetch_price();
+            let unit_price = 16;
+            let _total_collateral_in_usd = unit_price * stoken.balance_of(user);
+            let _total_debt_in_usd = unit_price * debttoken.balance_of(user);
+            let health_factor = calculate_health_factor_from_balance(_total_collateral_in_usd, _total_debt_in_usd, self.reserve.liquidity_threshold);
+            health_factor >=HEALTH_FACTOR_LIQUIDATION_THRESHOLD
+        }
+
+        //Option<AccountId>
         #[ink(message)]
-        pub fn get_the_unhelthy_reserves(&self){} //Option<AccountId>        
+        pub fn get_the_unhelthy_reserves(&self)-> Option<Vec<AccountId>>{
+            let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+            //TODO: let unit_price = self.env().extension().fetch_price();
+            let unit_price = 16;
+            let mut result = Vec::new();
+            for (user, status) in self.users.iter(){
+                if *status != 1 {
+                    //1表示这个用户有钱存在池子里 是我们的用户，0表示用户把所有钱都取走了，相当于不是我们的用户了
+                    continue
+                }
+                let _total_collateral_in_usd = unit_price * stoken.balance_of(*user);
+                let _total_debt_in_usd = unit_price * debttoken.balance_of(*user);
+                if calculate_health_factor_from_balance(_total_collateral_in_usd, _total_debt_in_usd, self.reserve.liquidity_threshold) <HEALTH_FACTOR_LIQUIDATION_THRESHOLD {
+                    result.push(*user)
+                }
+            }
+            if result.is_empty(){
+                None
+            }else{
+                Some(result)
+            }
+
+        }         
     }
 }
