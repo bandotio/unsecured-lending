@@ -19,7 +19,6 @@ pub const BASE_LIQUIDITY_RATE: u128 = ONE / 100 * 10; // 10%
 pub const BASE_BORROW_RATE: u128 = ONE / 100 * 18; // 18%
 pub const BASE_LIQUIDITY_INDEX: u128 = ONE; // 1
 
-
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
 #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
 pub struct ReserveData {
@@ -37,7 +36,6 @@ pub struct ReserveData {
 }
 
 impl ReserveData {
-    /// Create a new reserve
     pub fn new(
         stoken_address: AccountId,
         debt_token_address: AccountId,
@@ -70,7 +68,7 @@ pub struct InterestRateData {
     pub utilization_rate: u128,
 }
 
-#[derive(Debug, Copy, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
+#[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
 #[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
 pub struct UserReserveData {
     pub cumulated_liquidity_interest: u128,
@@ -101,15 +99,15 @@ fn calculate_available_borrows_in_usd(total_collateral_in_usd:u128, total_debt_i
 } 
 
 //double check
-   /**
+/**
     * @dev Checks if a specific balance decrease is allowed
     * (i.e. doesn't bring the user borrow position health factor under HEALTH_FACTOR_LIQUIDATION_THRESHOLD)
     * @param reservesData The data of all the reserves
     * @param user The address of the user
     * @param amount The amount to decrease
     * @return true if the decrease of the balance is allowed
-    **/
-pub fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u128) -> bool {
+**/
+pub fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u128) -> bool{
     let debttoken: IERC20 =  FromAccountId::from_account_id(vars.debt_token_address);
     let stoken: IERC20 = FromAccountId::from_account_id(vars.stoken_address);
     if debttoken.balance_of(user) == 0 {return true;}
@@ -126,7 +124,7 @@ pub fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u1
     if collateral_balance_after_decrease_in_usd == 0 {return false;}
     //这个公式需被double check，顺序和算法也是！
     let liquidity_threshold_after_decrease = 
-    (_total_collateral_in_usd * vars.liquidity_threshold - amount_to_decrease_in_usd * vars.liquidity_threshold) / collateral_balance_after_decrease_in_usd;
+    _total_collateral_in_usd * vars.liquidity_threshold - (amount_to_decrease_in_usd*vars.liquidity_threshold)/collateral_balance_after_decrease_in_usd;
     let health_factor_after_decrease = calculate_health_factor_from_balance(
         collateral_balance_after_decrease_in_usd,
         _total_debt_in_usd,
@@ -136,7 +134,7 @@ pub fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u1
 }
 
 //double check
-  /**
+/**
    * @dev Calculates how much of a specific collateral can be liquidated, given
    * a certain amount of debt asset.
    * - This function needs to be called after all the checks to validate the liquidation have been performed,
@@ -147,7 +145,7 @@ pub fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u1
    * @return collateral_amount: The maximum amount that is possible to liquidate given all the liquidation constraints
    *                           (user balance, close factor)
    *         debt_amount_needed: The amount to repay with the liquidation
-   **/
+**/
 pub fn caculate_available_collateral_to_liquidate(vars:&ReserveData, debt_to_cover:u128, user_collateral_balance:u128) -> (u128, u128){
     let mut collateral_amount = 0;
     let mut debt_amount_needed = 0;
@@ -167,7 +165,7 @@ pub fn caculate_available_collateral_to_liquidate(vars:&ReserveData, debt_to_cov
 }
 
 //以下算述需考虑精位还有算法顺序！因为算法的复杂性，还要double check！
-  /**
+ /**
    * @dev Calculates the interest rates depending on the reserve's state and configurations
    * @param reserve The address of the reserve
    * @param vars The interest rate data
@@ -176,7 +174,7 @@ pub fn caculate_available_collateral_to_liquidate(vars:&ReserveData, debt_to_cov
    * @param total_debt The total borrowed from the reserve
    * @param borrow_rate The borrow rate
    * @return The liquidity rate, the stable borrow rate and the variable borrow rate
-   **/
+**/
 pub fn calculate_interest_rates(
     reserve:&ReserveData,
     vars:&mut InterestRateData,
@@ -200,11 +198,10 @@ pub fn calculate_interest_rates(
         let excess_utilization_rate_ratio = utilization_rate - vars.optimal_utilization_rate / vars.excess_utilization_rate;
         current_borrow_rate = reserve.borrow_rate + vars.rate_slope1 + vars.rate_slope2 * excess_utilization_rate_ratio;
     } else {
-        current_borrow_rate = reserve.borrow_rate + vars.rate_slope1 * (utilization_rate / vars.optimal_utilization_rate);
+        current_borrow_rate = reserve.borrow_rate + vars.rate_slope1 * (utilization_rate/ vars.optimal_utilization_rate);
     }
     if total_debt != 0 {//这种算法有待验证！
         current_liquidity_rate = borrow_rate  * utilization_rate;
-
     }
     vars.utilization_rate = utilization_rate;
     (current_liquidity_rate, current_borrow_rate)
