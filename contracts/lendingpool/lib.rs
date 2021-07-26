@@ -416,17 +416,23 @@ mod lendingpool {
                 self.reserve.last_updated_timestamp
             )
         } 
-        // pub fn get_user_reserve_data(&self, user: AccountId) -> UserReserveData {
-        //     let _data = *self.users_data.get_mut(&user).expect("you have not borrow any dot");
-        //     let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
-        //     let dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
-        //     let interest = self.get_normalized_income() * stoken.balance_of(user) ;
-        //     let debt_interest = self.get_normalized_debt()* dtoken.balance_of(user);
-        //     _data.cumulated_liquidity_interest += interest;
-        //     _data.cumulated_borrow_interest += debt_interest;
-        //     _data.last_update_timestamp = Self::env().block_timestamp();
-        //     _data
-        // }
+        
+        pub fn get_user_reserve_data(&self, user: AccountId) -> UserReserveData {
+            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+            let dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let interest = self.get_normalized_income() * stoken.balance_of(user);
+            let debt_interest = self.get_normalized_debt()* dtoken.balance_of(user);
+
+            let data = self.users_data.get(&user).expect("you have not borrow any dot");
+            let new_data = UserReserveData {
+                cumulated_liquidity_interest: data.cumulated_liquidity_interest + interest,
+                cumulated_borrow_interest: data.cumulated_borrow_interest + debt_interest,
+                last_update_timestamp: data.last_update_timestamp,
+                borrow_balance: data.borrow_balance,
+            };
+            new_data
+        }
+
         pub fn get_interest_rate_data(&self) -> (u128, u128, u128, u128, u128) {
             (
                 self.interest_setting.optimal_utilization_rate, 
