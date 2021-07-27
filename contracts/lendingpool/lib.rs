@@ -175,7 +175,7 @@ mod lendingpool {
             user_reserve_data.last_update_timestamp = Self::env().block_timestamp();
             assert!(stoken.mint(receiver, amount).is_ok());  
 
-            self.users.insert(receiver,1);  //index+=1       
+            self.users.insert(receiver,1);  //active user      
             self.env().emit_event(Deposit {
                 user: sender,
                 on_behalf_of: receiver,
@@ -326,22 +326,25 @@ mod lendingpool {
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
             let sender = self.env().caller();
             let receiver = on_behalf_of;
+            
+            
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
-            let mut dtoken: IERC20 =FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let mut dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
             let credit_balance = self.delegate_allowance.get(&(receiver, sender)).copied().unwrap_or(0);
+            //在单币种的模式下，只考虑A用户授权给B，B来借款，不然这条assert需要有条件判断
             assert!(
                 amount <= credit_balance, 
                 "{}",
                 VL_NOT_ENOUGH_AVAILABLE_USER_BALANCE
             );       
-            let interest = self.get_normalized_income() * stoken.balance_of(sender) ;
-            let debt_interest = self.get_normalized_debt()* dtoken.balance_of(sender);
-            let reserve_data = self.users_data.get_mut(&sender).expect("user config does not exist");
-            if interest > 0 {//如果receiver和sender不一样要重加
+            let interest = self.get_normalized_income() * stoken.balance_of(receiver) ;
+            let debt_interest = self.get_normalized_debt()* dtoken.balance_of(receiver);
+            let reserve_data = self.users_data.get_mut(&receiver).expect("user config does not exist");
+            if interest > 0 {
                 reserve_data.cumulated_liquidity_interest += interest;
                 reserve_data.cumulated_borrow_interest += debt_interest;
             }        
-            let _credit_balance = stoken.balance_of(sender)  - dtoken.balance_of(sender) + reserve_data.cumulated_liquidity_interest - reserve_data.cumulated_borrow_interest;
+            let _credit_balance = stoken.balance_of(receiver)  - dtoken.balance_of(receiver) + reserve_data.cumulated_liquidity_interest - reserve_data.cumulated_borrow_interest;
             assert!(
                 amount <= _credit_balance, 
                 "{}",
@@ -350,14 +353,14 @@ mod lendingpool {
             reserve_data.last_update_timestamp = Self::env().block_timestamp();
             reserve_data.borrow_balance += amount;
             //这里要用balance_decrease_allowed
-            balance_decrease_allowed(&mut self.reserve, sender, amount);
+            balance_decrease_allowed(&mut self.reserve, receiver, amount);
 
             self.delegate_allowance.insert((receiver, sender), credit_balance - amount);
-            assert!(dtoken.mint(receiver, amount).is_ok());  // 只能是sender=receiver的情况下！         
+            assert!(dtoken.mint(receiver, amount).is_ok());  
             self.env().transfer(sender, amount).expect("transfer failed");
             
             self.update_state();
-            self.update_interest_rates(0, amount);//这个要考虑是不是要两个，因为是双方！
+            self.update_interest_rates(0, amount); 
             self.env().emit_event(Borrow {
                 user: sender,
                 on_behalf_of,
