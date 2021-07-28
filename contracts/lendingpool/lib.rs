@@ -610,6 +610,17 @@ mod lendingpool {
             }else{
                 Some(result)
             }
-        } 
+        }
+        
+        #[ink(message)]
+        pub fn get_reserve_data_additional(&self) -> (u128, u128) {
+            let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+            let total_stoken: Balance = stoken.total_supply();
+            let total_dtoken: Balance = debttoken.total_supply();
+            let available_liquidity = total_stoken - total_dtoken;
+            let utilization_rate = total_dtoken / total_stoken * 100;
+            (available_liquidity, utilization_rate)
+        }
     }
 }
