@@ -576,7 +576,7 @@ mod lendingpool {
 
         //david
         #[ink(message)]
-        pub fn is_user_reserve_healthy(&self, user: AccountId) -> bool{
+        pub fn is_user_reserve_healthy(&self, user: AccountId) -> u128{
             let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             //TODO: let unit_price = self.env().extension().fetch_price();
@@ -584,7 +584,7 @@ mod lendingpool {
             let _total_collateral_in_usd = unit_price * stoken.balance_of(user);
             let _total_debt_in_usd = unit_price * debttoken.balance_of(user);
             let health_factor = calculate_health_factor_from_balance(_total_collateral_in_usd, _total_debt_in_usd, self.reserve.liquidity_threshold);
-            health_factor >=HEALTH_FACTOR_LIQUIDATION_THRESHOLD
+            health_factor 
         }
 
         #[ink(message)]
