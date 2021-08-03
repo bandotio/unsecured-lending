@@ -609,6 +609,47 @@ mod lendingpool {
             }else{
                 Some(result)
             }
-        } 
+        }
+        
+        /**
+         * Get reserve data
+         * total market supply
+         * available liquidity
+         * total lending
+         * utilization rate 
+         **/
+        #[ink(message)]
+        pub fn get_reserve_data_ui(&self) -> (u128, u128, u128, u128){
+            let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+            let total_stoken: Balance = stoken.total_supply();
+            let total_dtoken: Balance = debttoken.total_supply();
+            let available_liquidity = total_stoken - total_dtoken;
+            let utilization_rate = total_dtoken / total_stoken * 100;
+            (total_stoken, available_liquidity, total_dtoken, utilization_rate)
+        }
+ 
+        /**
+         * Get user reserve data
+         * total deposit
+         * total borrow
+         * deposit interest
+         * borrow interest
+         **/        
+        #[ink(message)]
+        pub fn get_user_reserve_data_ui(&self, user: AccountId) -> (u128, u128, u128, u128) {
+            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+            let dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let user_stoken: Balance = stoken.balance_of(user);
+            let user_dtoken: Balance = dtoken.balance_of(user);
+            let interest = self.get_normalized_income() * user_stoken;
+            let debt_interest = self.get_normalized_debt()* user_dtoken;
+
+            let data = self.users_data.get(&user).expect("you have not borrow any dot");
+            let cumulated_liquidity_interest = data.cumulated_liquidity_interest + interest;
+            let cumulated_borrow_interest = data.cumulated_borrow_interest + debt_interest;
+            
+            (user_stoken, cumulated_liquidity_interest, user_dtoken, cumulated_borrow_interest)
+        }        
     }
 }
