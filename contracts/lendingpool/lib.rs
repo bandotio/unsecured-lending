@@ -578,6 +578,10 @@ mod lendingpool {
         pub fn is_user_reserve_healthy(&self, user: AccountId) -> u128{
             let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+            //if user not exist should return 0
+            if !self.users_data.get(&user).is_some(){
+                return 0;
+            };
             //TODO: let unit_price = self.env().extension().fetch_price();
             let unit_price = 16;
             let _total_collateral_in_usd = unit_price * stoken.balance_of(user);
