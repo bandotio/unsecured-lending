@@ -640,16 +640,22 @@ mod lendingpool {
         pub fn get_user_reserve_data_ui(&self, user: AccountId) -> (u128, u128, u128, u128) {
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
+
             let user_stoken: Balance = stoken.balance_of(user);
             let user_dtoken: Balance = dtoken.balance_of(user);
             let interest = self.get_normalized_income() * user_stoken;
             let debt_interest = self.get_normalized_debt()* user_dtoken;
 
-            let data = self.users_data.get(&user).expect("you have not borrow any dot");
-            let cumulated_liquidity_interest = data.cumulated_liquidity_interest + interest;
-            let cumulated_borrow_interest = data.cumulated_borrow_interest + debt_interest;
-            
-            (user_stoken, cumulated_liquidity_interest, user_dtoken, cumulated_borrow_interest)
+            let data = self.users_data.get(&user);
+
+            match data {
+                None => return (0, 0, 0, 0),
+                Some(some_data) => {
+                    let cumulated_liquidity_interest = some_data.cumulated_liquidity_interest + interest;
+                    let cumulated_borrow_interest = some_data.cumulated_borrow_interest + debt_interest;
+                    return (user_stoken, cumulated_liquidity_interest, user_dtoken, cumulated_borrow_interest);
+                },
+            }
         }        
     }
 }
