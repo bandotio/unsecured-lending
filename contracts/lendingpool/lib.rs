@@ -629,7 +629,8 @@ mod lendingpool {
             let total_stoken: Balance = stoken.total_supply();
             let total_dtoken: Balance = debttoken.total_supply();
             let available_liquidity = total_stoken - total_dtoken;
-            let utilization_rate = total_dtoken / total_stoken * 100;
+            //result should divide by 1000000
+            let utilization_rate = total_dtoken * 1000000 / total_stoken  * 100 ;
             (total_stoken, available_liquidity, total_dtoken, utilization_rate)
         }
  
