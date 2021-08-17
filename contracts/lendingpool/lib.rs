@@ -183,6 +183,7 @@ mod lendingpool {
             });
         }
         //只是查，但没有记录或修改到用户状态
+        #[ink(message)]
         pub fn get_normalized_income(&self) -> u128 {
             let timestamp = self.reserve.last_updated_timestamp; 
             if timestamp == self.env().block_timestamp() {
@@ -192,6 +193,7 @@ mod lendingpool {
             cumulated
         }
         //只是查，但没有记录或修改到用户状态
+        #[ink(message)]
         pub fn get_normalized_debt(&self) -> u128 {
             let timestamp = self.reserve.last_updated_timestamp; 
             if timestamp == self.env().block_timestamp() {
@@ -314,7 +316,7 @@ mod lendingpool {
         * if he has been given credit delegation allowance
         **/ 
         #[ink(message)]
-        pub fn borrow(&mut self, amount: Balance, on_behalf_of: AccountId) {//只能是同一个人！
+        pub fn borrow(&mut self, amount: Balance, on_behalf_of: AccountId) {
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
             let sender = self.env().caller();
             let receiver = on_behalf_of;
@@ -400,7 +402,7 @@ mod lendingpool {
                 amount,
             });
         }
-
+        #[ink(message)]
         pub fn get_reserve_data(&self) -> (u128, u128, u128, u128, u128, u128, u64){
             return (
                 self.reserve.liquidity_rate, self.reserve.borrow_rate,
@@ -409,7 +411,7 @@ mod lendingpool {
                 self.reserve.last_updated_timestamp
             )
         } 
-
+        #[ink(message)]
         pub fn get_user_reserve_data(&self, user: AccountId) -> UserReserveData {
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
@@ -425,7 +427,7 @@ mod lendingpool {
             };
             new_data
         }
-
+        #[ink(message)]
         pub fn get_interest_rate_data(&self) -> (u128, u128, u128, u128, u128) {
             (
                 self.interest_setting.optimal_utilization_rate, 
@@ -435,13 +437,13 @@ mod lendingpool {
                 self.interest_setting.utilization_rate
             )
         } 
-
+        #[ink(message)]
         pub fn set_reserve_configuration(&mut self, ltv: u128, liquidity_threshold: u128, liquidity_bonus: u128){
             self.reserve.ltv = ltv;
             self.reserve.liquidity_threshold = liquidity_threshold;
             self.reserve.liquidity_bonus = liquidity_bonus;
         }
-
+        #[ink(message)]
         pub fn set_interest_rate_data(
             &mut self, optimal_utilization_rate:u128, 
             rate_slope1: u128, rate_slope2:u128)
@@ -613,9 +615,9 @@ mod lendingpool {
             }else{
                 Some(result)
             }
-        }
-        
-        /**
+        } 
+
+         /**
          * Get reserve data
          * total market supply
          * available liquidity
@@ -633,8 +635,8 @@ mod lendingpool {
             let utilization_rate = total_dtoken * 1000000 / total_stoken  * 100 ;
             (total_stoken, available_liquidity, total_dtoken, utilization_rate)
         }
- 
-        /**
+
+         /**
          * Get user reserve data
          * total deposit
          * total borrow
@@ -661,6 +663,7 @@ mod lendingpool {
                     return (user_stoken, cumulated_liquidity_interest, user_dtoken, cumulated_borrow_interest);
                 },
             }
-        }        
+        }
+
     }
 }
