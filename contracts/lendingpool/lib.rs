@@ -123,7 +123,8 @@ mod lendingpool {
     impl Lendingpool {  
         #[ink(constructor)]
         pub fn new(
-            stoken: AccountId, debt_token: AccountId, 
+            stoken: AccountId, debt_token: AccountId,
+            oracle_price_address: AccountId, 
             ltv: u128, liquidity_threshold: u128, 
             liquidity_bonus: u128,
             optimal_utilization_rate:u128, 
@@ -133,6 +134,7 @@ mod lendingpool {
                 reserve: ReserveData::new(
                     stoken,
                     debt_token,
+                    oracle_price_address,
                     ltv,
                     liquidity_threshold,
                     liquidity_bonus

@@ -1,7 +1,7 @@
 [package]
 name = "lendingpool"
 version = "0.1.0"
-authors = ["[your_name] <[your_email]>"]
+authors = ["Bandot"]
 edition = "2018"
 
 [dependencies]
@@ -16,7 +16,7 @@ scale = { package = "parity-scale-codec", version = "2.0.1", default-features = 
 scale-info = { version = "0.6.0", default-features = false, features = ["derive"], optional = true }
 
 ierc20 = { version = "0.1.0", path = "ierc20", default-features = false, features = ["ink-as-dependency"] }
-#ink_log = { git = "https://github.com/patractlabs/ink-log", branch = "master", default-features = false, features = ["ink-log-chain-extensions"] }
+price = { version = "0.1.0", path = "price", default-features = false, features = ["ink-as-dependency"] }
 
 # Should be removed once bitvecto-rs/bitvec#105 is resolved
 funty = "=1.1.0"
@@ -39,7 +39,9 @@ std = [
     "ink_prelude/std",
     "scale/std",
     "scale-info/std",
+
     "ierc20/std",
+    "price/std",
 ]
 ink-as-dependency = []
 
@@ -49,4 +51,5 @@ overflow-checks = false
 [workspace]
 members = [
     "ierc20",
+    "price",
 ]
