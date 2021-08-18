@@ -100,8 +100,8 @@ mod price {
 
         /// Simply returns the current value of our `bool`.
         #[ink(message)]
-        pub fn get(&self) -> u32 {
-            u32::from_le_bytes(self.value)
+        pub fn get(&self) -> u128 {
+            u32::from_le_bytes(self.value) as u128
             
         }
     }
