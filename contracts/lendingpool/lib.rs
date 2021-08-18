@@ -520,7 +520,7 @@ mod lendingpool {
             let mut debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
             
             let mut oracle: Price = FromAccountId::from_account_id(self.reserve.oracle_price_address);
-            oracle.update();
+            oracle.update().expect("Failed to update price");
             let unit_price = oracle.get();
             let borrower_total_debt_in_usd = debttoken.balance_of(borrower) * unit_price; 
             let borrower_total_balance_in_usd = stoken.balance_of(borrower) * unit_price;
@@ -536,7 +536,7 @@ mod lendingpool {
                 LPCM_SPECIFIED_CURRENCY_NOT_BORROWED_BY_USER
             );
             let max_liquidatable_debt = borrower_total_debt_in_usd * LIQUIDATION_CLOSE_FACTOR_PERCENT;
-            let mut actual_debt_to_liquidate = 0;
+            let mut actual_debt_to_liquidate;
             if debt_to_cover > max_liquidatable_debt {
                 actual_debt_to_liquidate = max_liquidatable_debt
             } else {
@@ -559,7 +559,7 @@ mod lendingpool {
            debttoken.burn(borrower, actual_debt_to_liquidate).expect("debt token burn failed");
            self.update_interest_rates(actual_debt_to_liquidate,0);
            if receive_s_token{
-               stoken.transfer_from(borrower, liquidator, max_collateral_to_liquidate);                   
+               stoken.transfer_from(borrower, liquidator, max_collateral_to_liquidate).expect("transfer stoken failed");                   
            } else {
             self.update_liquidity_index();
             self.update_interest_rates(0,max_collateral_to_liquidate);
@@ -567,8 +567,7 @@ mod lendingpool {
             //transfer max_collateral_to_liquidate dot back to liqudator
             self.env().transfer(liquidator, max_collateral_to_liquidate).expect("transfer failed");
            }
-           //要想没被liquidate的怎么样
-           //这里要加两个interest的更新？
+
            let borrower_data = self.users_data.get_mut(&borrower).expect("user config does not exist");
            borrower_data.borrow_balance -= actual_debt_to_liquidate;
            borrower_data.last_update_timestamp = Self::env().block_timestamp();
@@ -585,7 +584,7 @@ mod lendingpool {
             let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut oracle: Price = FromAccountId::from_account_id(self.reserve.oracle_price_address);
-            oracle.update();
+            oracle.update().expect("Failed to update price");
             let unit_price = oracle.get();
             //if user not exist should return 0
             if !self.users_data.get(&user).is_some(){
@@ -602,7 +601,7 @@ mod lendingpool {
             let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut oracle: Price = FromAccountId::from_account_id(self.reserve.oracle_price_address);
-            oracle.update();
+            oracle.update().expect("Failed to update price");
             let unit_price = oracle.get();
             let mut result = Vec::new();
             for (user, status) in self.users.iter(){
@@ -610,8 +609,8 @@ mod lendingpool {
                     //1表示这个用户有钱存在池子里 是我们的用户，0表示用户把所有钱都取走了，相当于不是我们的用户了
                     continue
                 }
-                let _total_collateral_in_usd = unit_price * stoken.balance_of(*user);//不加interest?
-                let _total_debt_in_usd = unit_price * debttoken.balance_of(*user);//不加interest?
+                let _total_collateral_in_usd = unit_price * stoken.balance_of(*user);
+                let _total_debt_in_usd = unit_price * debttoken.balance_of(*user);
                 if calculate_health_factor_from_balance(_total_collateral_in_usd, _total_debt_in_usd, self.reserve.liquidity_threshold) <HEALTH_FACTOR_LIQUIDATION_THRESHOLD {
                     result.push(*user)
                 }

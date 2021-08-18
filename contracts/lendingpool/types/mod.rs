@@ -7,6 +7,7 @@ use ink_env::AccountId;
 use ink_storage::traits::{PackedLayout, SpreadLayout};
 use ink_env::call::FromAccountId;
 use ierc20::IERC20;
+use price::Price;
 
 /// The representation of the number one as a precise number as 10^12
 pub const ONE: u128 = 1_000_000_000_000;
@@ -86,21 +87,20 @@ pub struct UserKycData {
     pub email: String,
 }
 
-//done
+
 pub fn calculate_health_factor_from_balance(total_collateral_in_usd:u128, total_debt_in_usd:u128, liquidation_threshold:u128) -> u128{
     if total_debt_in_usd == 0 { return 0};
     let result = total_collateral_in_usd * liquidation_threshold / total_debt_in_usd;
     result
 }
-//done
-fn calculate_available_borrows_in_usd(total_collateral_in_usd:u128, total_debt_in_usd:u128, ltv:u128) -> u128{
-    let mut available_borrows_in_usd = total_collateral_in_usd * ltv;
-    if available_borrows_in_usd < total_debt_in_usd { return 0};
-    available_borrows_in_usd -= total_debt_in_usd;
-    available_borrows_in_usd
-} 
 
-//double check
+// fn calculate_available_borrows_in_usd(total_collateral_in_usd:u128, total_debt_in_usd:u128, ltv:u128) -> u128{
+//     let mut available_borrows_in_usd = total_collateral_in_usd * ltv;
+//     if available_borrows_in_usd < total_debt_in_usd { return 0};
+//     available_borrows_in_usd -= total_debt_in_usd;
+//     available_borrows_in_usd
+// } 
+
 /**
     * @dev Checks if a specific balance decrease is allowed
     * (i.e. doesn't bring the user borrow position health factor under HEALTH_FACTOR_LIQUIDATION_THRESHOLD)
@@ -114,9 +114,9 @@ pub fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u1
     let stoken: IERC20 = FromAccountId::from_account_id(vars.stoken_address);
     if debttoken.balance_of(user) == 0 {return true;}
     if vars.liquidity_threshold == 0 {return true;}
-    // let oracle_price: Price = FromAccountId::from_account_id(vars.oracle_price_address);
-    // let unit_price = oracle_price.get();
-    let unit_price = 16;
+    let mut oracle: Price = FromAccountId::from_account_id(vars.oracle_price_address);
+    oracle.update().expect("Failed to update price");
+    let unit_price = oracle.get();
     let _total_collateral_in_usd = unit_price * stoken.balance_of(user);
 
     let _total_debt_in_usd = unit_price * debttoken.balance_of(user);
@@ -149,16 +149,17 @@ pub fn balance_decrease_allowed(vars:&mut ReserveData, user:AccountId, amount:u1
    *         debt_amount_needed: The amount to repay with the liquidation
 **/
 pub fn caculate_available_collateral_to_liquidate(vars:&ReserveData, debt_to_cover:u128, user_collateral_balance:u128) -> (u128, u128){
-    let mut collateral_amount = 0;
-    let mut debt_amount_needed = 0;
-
-    let dot_unit_price = 16;
+    let collateral_amount;
+    let debt_amount_needed;
+    let mut oracle: Price = FromAccountId::from_account_id(vars.oracle_price_address);
+    oracle.update().expect("Failed to update price");
+    let unit_price = oracle.get();
     let debt_asset_price = 1;
 
-    let max_amount_collateral_to_liquidate = debt_asset_price * debt_to_cover * vars.liquidity_bonus / dot_unit_price;
+    let max_amount_collateral_to_liquidate = debt_asset_price * debt_to_cover * vars.liquidity_bonus / unit_price;
     if max_amount_collateral_to_liquidate > user_collateral_balance {
         collateral_amount = user_collateral_balance;
-        debt_amount_needed = dot_unit_price * collateral_amount / debt_asset_price / vars.liquidity_bonus;
+        debt_amount_needed = unit_price * user_collateral_balance / debt_asset_price / vars.liquidity_bonus;
     } else {
         collateral_amount = max_amount_collateral_to_liquidate;
         debt_amount_needed = debt_to_cover;
@@ -188,9 +189,9 @@ pub fn calculate_interest_rates(
     let stoken: IERC20 = FromAccountId::from_account_id(reserve.stoken_address);
     let _available_liqudity = stoken.total_supply();
     let current_available_liqudity = _available_liqudity + liquidity_added - liquidity_taken;
-    let mut current_borrow_rate = 0;
+    let current_borrow_rate;
     let mut current_liquidity_rate = 0;
-    let mut utilization_rate = 0;
+    let utilization_rate;
     if total_debt == 0 {
         utilization_rate = 0
     } else {
