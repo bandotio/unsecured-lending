@@ -11,13 +11,14 @@ use price::Price;
 
 /// The representation of the number one as a precise number as 10^12
 pub const ONE: u128 = 1_000_000_000_000;
+pub const ONE_PERCENTAGE: u128 = 10_000_000_000;
 
 pub const ONE_YEAR:u128 = 365*24*60*60*1000;
-pub const LIQUIDATION_CLOSE_FACTOR_PERCENT:u128 = 5 * 10_u128.saturating_pow(11); //50%
-pub const HEALTH_FACTOR_LIQUIDATION_THRESHOLD:u128 = ONE;
+pub const LIQUIDATION_CLOSE_FACTOR_PERCENT: u128 = 50 * ONE_PERCENTAGE; //50%
+pub const HEALTH_FACTOR_LIQUIDATION_THRESHOLD: u128 = ONE;
 
-pub const BASE_LIQUIDITY_RATE: u128 = ONE / 100 * 10; // 10% 
-pub const BASE_BORROW_RATE: u128 = ONE / 100 * 18; // 18%
+pub const BASE_LIQUIDITY_RATE: u128 = 10 * ONE_PERCENTAGE; // 10% 
+pub const BASE_BORROW_RATE: u128 = 18 * ONE_PERCENTAGE; // 18%
 pub const BASE_LIQUIDITY_INDEX: u128 = ONE; // 1
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
@@ -51,9 +52,9 @@ impl ReserveData {
             stoken_address: stoken_address,
             debt_token_address: debt_token_address,
             oracle_price_address: oracle_price_address,
-            ltv: ltv,
-            liquidity_threshold: liquidity_threshold,
-            liquidity_bonus: liquidity_bonus,
+            ltv: ltv * ONE_PERCENTAGE,
+            liquidity_threshold: liquidity_threshold * ONE_PERCENTAGE,
+            liquidity_bonus: liquidity_bonus * ONE_PERCENTAGE,
             decimals: 12,
             liquidity_index: BASE_LIQUIDITY_INDEX,
             last_updated_timestamp: Default::default(),
@@ -64,11 +65,27 @@ impl ReserveData {
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
 #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
 pub struct InterestRateData {
-    pub optimal_utilization_rate:u128,
-    pub excess_utilization_rate:u128,
+    pub optimal_utilization_rate: u128,
+    pub excess_utilization_rate: u128,
     pub rate_slope1: u128,
-    pub rate_slope2:u128,
+    pub rate_slope2: u128,
     pub utilization_rate: u128,
+}
+
+impl InterestRateData {
+    pub fn new(
+        optimal_utilization: u128,
+        slope1: u128,
+        slope2: u128,
+    ) -> InterestRateData {
+        InterestRateData {
+            optimal_utilization_rate: optimal_utilization * ONE_PERCENTAGE,
+            excess_utilization_rate: ONE -  optimal_utilization * ONE_PERCENTAGE,
+            rate_slope1: slope1 * ONE_PERCENTAGE,
+            rate_slope2: slope2 * ONE_PERCENTAGE,
+            utilization_rate: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]

@@ -143,13 +143,11 @@ mod lendingpool {
                 users_data: StorageHashMap::new(),
                 delegate_allowance: StorageHashMap::new(),
                 users_kyc_data: StorageHashMap::new(),
-                interest_setting: InterestRateData {
-                    optimal_utilization_rate:optimal_utilization_rate,
-                    excess_utilization_rate:1 - optimal_utilization_rate,
-                    rate_slope1: rate_slope1,
-                    rate_slope2: rate_slope2,
-                    utilization_rate: Default::default(),
-                },
+                interest_setting: InterestRateData::new(
+                    optimal_utilization_rate,
+                    rate_slope1,
+                    rate_slope2,
+                ),
                 users: Default::default(),
             }
         }
