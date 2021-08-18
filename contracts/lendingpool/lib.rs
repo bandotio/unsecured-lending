@@ -519,8 +519,9 @@ mod lendingpool {
             let mut stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
             
-            //let unit_price = self.env().extension().fetch_price();
-            let unit_price = 16;//小数点！
+            let mut oracle: Price = FromAccountId::from_account_id(self.reserve.oracle_price_address);
+            oracle.update();
+            let unit_price = oracle.get();
             let borrower_total_debt_in_usd = debttoken.balance_of(borrower) * unit_price; 
             let borrower_total_balance_in_usd = stoken.balance_of(borrower) * unit_price;
             let health_factor = calculate_health_factor_from_balance(borrower_total_balance_in_usd, borrower_total_debt_in_usd, self.reserve.liquidity_threshold);
@@ -585,13 +586,11 @@ mod lendingpool {
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut oracle: Price = FromAccountId::from_account_id(self.reserve.oracle_price_address);
             oracle.update();
+            let unit_price = oracle.get();
             //if user not exist should return 0
             if !self.users_data.get(&user).is_some(){
                 return 0;
             };
-            //TODO: let unit_price = self.env().extension().fetch_price();
-            
-            let unit_price = oracle.get();
             let _total_collateral_in_usd = unit_price * stoken.balance_of(user);
             let _total_debt_in_usd = unit_price * debttoken.balance_of(user);
             let health_factor = calculate_health_factor_from_balance(_total_collateral_in_usd, _total_debt_in_usd, self.reserve.liquidity_threshold);
@@ -602,8 +601,9 @@ mod lendingpool {
         pub fn get_the_unhelthy_reserves(&self)-> Option<Vec<AccountId>>{
             let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
-            //TODO: let unit_price = self.env().extension().fetch_price();
-            let unit_price = 16;
+            let mut oracle: Price = FromAccountId::from_account_id(self.reserve.oracle_price_address);
+            oracle.update();
+            let unit_price = oracle.get();
             let mut result = Vec::new();
             for (user, status) in self.users.iter(){
                 if *status != 1 {
