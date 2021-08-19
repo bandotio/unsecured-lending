@@ -443,7 +443,7 @@ mod lendingpool {
         pub fn delegate_to(&self, delegator: AccountId) -> Vec<(AccountId, Balance)> {
             let mut delegators = vec![];
             for v in self.delegate_allowance.iter() {
-                if v.0 .2 == delegator {
+                if v.0 .0 == delegator {
                     delegators.push((v.0 .0, *v.1))
                 }
             }
