@@ -94,7 +94,7 @@ pub struct UserReserveData {
     pub cumulated_liquidity_interest: u128,
     pub cumulated_borrow_interest: u128,
     pub last_update_timestamp: u64,
-    pub borrow_balance: u128, //也不用记录stoken的多少
+    //pub borrow_balance: u128,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]

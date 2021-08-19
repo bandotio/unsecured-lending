@@ -175,7 +175,6 @@ mod lendingpool {
             let user_reserve_data = entry.or_insert(Default::default());
             user_reserve_data.last_update_timestamp = Self::env().block_timestamp();
             assert!(stoken.mint(receiver, amount).is_ok());  
-
             self.users.insert(receiver,1);  //active user       
             self.env().emit_event(Deposit {
                 user: sender,
@@ -183,9 +182,8 @@ mod lendingpool {
                 amount,
             });
         }
-        //只是查，但没有记录或修改到用户状态
-        #[ink(message)]
-        pub fn get_normalized_income(&self) -> u128 {
+
+        fn get_normalized_income(&self) -> u128 {
             let timestamp = self.reserve.last_updated_timestamp; 
             if timestamp == self.env().block_timestamp() {
                 return self.reserve.liquidity_index
@@ -193,9 +191,8 @@ mod lendingpool {
             let cumulated = self.caculate_linear_interest(timestamp) * &self.reserve.liquidity_index;
             cumulated
         }
-        //只是查，但没有记录或修改到用户状态
-        #[ink(message)]
-        pub fn get_normalized_debt(&self) -> u128 {
+
+        fn get_normalized_debt(&self) -> u128 {
             let timestamp = self.reserve.last_updated_timestamp; 
             if timestamp == self.env().block_timestamp() {
                 return ONE;
@@ -203,14 +200,6 @@ mod lendingpool {
             let stable_borrow_rate = self.reserve.borrow_rate;
             let cumulated = self.calculate_compounded_interest(stable_borrow_rate,timestamp) * ONE;
             cumulated
-        }
-
-        pub fn update_interest_rates(&mut self, liquidity_added: u128, liquidity_taken: u128) {
-            let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
-            let total_debt = debttoken.total_supply();
-            let (new_liquidity_rate, new_borrow_rate) = calculate_interest_rates(&self.reserve, &mut self.interest_setting, liquidity_added, liquidity_taken, total_debt, self.reserve.borrow_rate);
-            self.reserve.liquidity_rate = new_liquidity_rate;
-            self.reserve.borrow_rate = new_borrow_rate;
         }
 
         fn caculate_linear_interest(&self, last_updated_timestamp: u64) -> u128 {
@@ -249,11 +238,19 @@ mod lendingpool {
             }
         }
 
+        fn update_interest_rates(&mut self, liquidity_added: u128, liquidity_taken: u128) {
+            let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let total_debt = debttoken.total_supply();
+            let (new_liquidity_rate, new_borrow_rate) = calculate_interest_rates(&self.reserve, &mut self.interest_setting, liquidity_added, liquidity_taken, total_debt, self.reserve.borrow_rate);
+            self.reserve.liquidity_rate = new_liquidity_rate;
+            self.reserve.borrow_rate = new_borrow_rate;
+        }
+
         /**
         * @dev Withdraws an `amount` of underlying asset from the reserve, burning the equivalent sTokens owned
         * E.g. User has 100 sDOT, calls withdraw() and receives 100 DOT, burning the 100 sDOT
         * @param amount The underlying amount to be withdrawn
-        *   - Send the value type(uint256).max in order to withdraw the whole sToken balance
+        *   - Send the value in order to withdraw the whole sToken balance
         * @param to Address that will receive the underlying, same as msg.sender if the user
         *   wants to receive it on his own wallet, or a different address if the beneficiary is a
         *   different wallet
@@ -307,7 +304,7 @@ mod lendingpool {
 
         /**
         * @dev Allows users to borrow a specific `amount` of the reserve underlying asset, provided that the borrower
-        * already deposited enough collateral, or he was given enough allowance by a credit delegator on the
+        * was given enough allowance by a credit delegator on the
         * corresponding debt token
         * - E.g. User borrows 100 DOT passing as `onBehalfOf` his own address, receiving the 100 DOT in his wallet
         *   and 100 debt tokens
@@ -344,7 +341,7 @@ mod lendingpool {
                 VL_NOT_ENOUGH_AVAILABLE_USER_BALANCE
             );
             reserve_data.last_update_timestamp = Self::env().block_timestamp();
-            reserve_data.borrow_balance += amount;
+            //reserve_data.borrow_balance += amount;
 
             balance_decrease_allowed(&mut self.reserve, receiver, amount);
 
@@ -364,7 +361,7 @@ mod lendingpool {
         /**
         * @notice Repays a borrowed `amount` on a specific reserve, burning the equivalent debt tokens owned
         * - E.g. User repays 100 DOT, burning 100 debt tokens of the `onBehalfOf` address
-        * - Send the value type(uint256).max in order to repay the whole debt for `asset` on the specific `debtMode`
+        * - Send the value in order to repay the debt for `asset`
         * @param onBehalfOf Address of the user who will get his debt reduced/removed. Should be the address of the
         * user calling the function if he wants to reduce/remove his own debt, or the address of any other
         * other borrower whose debt should be removed
@@ -391,7 +388,7 @@ mod lendingpool {
             } else {
                 let rest = amount - reserve_data_sender.cumulated_borrow_interest;
                 reserve_data_sender.cumulated_borrow_interest = 0;
-                reserve_data_sender.borrow_balance -= amount;
+                //reserve_data_sender.borrow_balance -= amount;
                 dtoken.burn(recevier, rest).expect("debt token burn failed");
             }
             reserve_data_sender.last_update_timestamp = Self::env().block_timestamp();
@@ -403,31 +400,7 @@ mod lendingpool {
                 amount,
             });
         }
-        #[ink(message)]
-        pub fn get_reserve_data(&self) -> (u128, u128, u128, u128, u128, u128, u64){
-            return (
-                self.reserve.liquidity_rate, self.reserve.borrow_rate,
-                self.reserve.ltv, self.reserve.liquidity_threshold, 
-                self.reserve.liquidity_bonus, self.reserve.decimals, 
-                self.reserve.last_updated_timestamp
-            )
-        } 
-        #[ink(message)]
-        pub fn get_user_reserve_data(&self, user: AccountId) -> UserReserveData {
-            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
-            let dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
-            let interest = self.get_normalized_income() * stoken.balance_of(user);
-            let debt_interest = self.get_normalized_debt()* dtoken.balance_of(user);
-
-            let data = self.users_data.get(&user).expect("you have not borrow any dot");
-            let new_data = UserReserveData {
-                cumulated_liquidity_interest: data.cumulated_liquidity_interest + interest,
-                cumulated_borrow_interest: data.cumulated_borrow_interest + debt_interest,
-                last_update_timestamp: Self::env().block_timestamp(),
-                borrow_balance: data.borrow_balance,
-            };
-            new_data
-        }
+        
         #[ink(message)]
         pub fn get_interest_rate_data(&self) -> (u128, u128, u128, u128, u128) {
             (
@@ -438,21 +411,6 @@ mod lendingpool {
                 self.interest_setting.utilization_rate
             )
         } 
-        #[ink(message)]
-        pub fn set_reserve_configuration(&mut self, ltv: u128, liquidity_threshold: u128, liquidity_bonus: u128){
-            self.reserve.ltv = ltv;
-            self.reserve.liquidity_threshold = liquidity_threshold;
-            self.reserve.liquidity_bonus = liquidity_bonus;
-        }
-        #[ink(message)]
-        pub fn set_interest_rate_data(
-            &mut self, optimal_utilization_rate:u128, 
-            rate_slope1: u128, rate_slope2:u128)
-            {
-                self.interest_setting.optimal_utilization_rate = optimal_utilization_rate;
-                self.interest_setting.rate_slope1 = rate_slope1;
-                self.interest_setting.rate_slope2 = rate_slope2;                
-        }
 
         /**
          * @dev delgator can delegate some their own credits which get by deposit funds to delegatee
@@ -462,44 +420,34 @@ mod lendingpool {
         #[ink(message)]
         pub fn delegate(&mut self, delegatee: AccountId, amount: Balance) {
             let delegator = self.env().caller();
-            self.delegate_allowance
-                .insert((delegator, delegatee), amount);
+            self.delegate_allowance.insert((delegator, delegatee), amount);
         }
 
         #[ink(message)]
         pub fn delegate_amount(&self, delegator: AccountId, delegatee: AccountId) -> Balance {
-            self.delegate_allowance
-                .get(&(delegator, delegatee))
-                .copied()
-                .unwrap_or(0u128)
+            self.delegate_allowance.get(&(delegator, delegatee)).copied().unwrap_or(0u128)
         }
+
         #[ink(message)]
-        pub fn delegate_of(&self, delegatee: AccountId) -> Vec<(AccountId, Balance)> {
-            let mut delegates = vec![];
+        pub fn delegate_from(&self, delegatee: AccountId) -> Vec<(AccountId, Balance)> {
+            let mut delegatees = vec![];
             for v in self.delegate_allowance.iter() {
                 if v.0 .1 == delegatee {
-                    delegates.push((v.0 .0, *v.1))
+                    delegatees.push((v.0 .0, *v.1))
                 }
             }
-            delegates
+            delegatees
         }
 
-        //暂不开放
-        pub fn set_kyc_data(&mut self, name: Option<String>, email: Option<String>) {
-            let user = self.env().caller();
-            let entry = self.users_kyc_data.entry(user);
-            let kyc_data = entry.or_insert(Default::default());
-            if let Some(user_name) = name {
-                kyc_data.name = user_name;
+        #[ink(message)]
+        pub fn delegate_to(&self, delegator: AccountId) -> Vec<(AccountId, Balance)> {
+            let mut delegators = vec![];
+            for v in self.delegate_allowance.iter() {
+                if v.0 .2 == delegator {
+                    delegators.push((v.0 .0, *v.1))
+                }
             }
-            if let Some(user_email) = email {
-                kyc_data.email = user_email;
-            }         
-        }
-
-        //暂不开放
-        pub fn get_kyc_data(&self, user: AccountId) -> Option<UserKycData> {
-            self.users_kyc_data.get(&user).cloned()
+            delegators
         }
 
         /**
@@ -567,7 +515,7 @@ mod lendingpool {
            }
 
            let borrower_data = self.users_data.get_mut(&borrower).expect("user config does not exist");
-           borrower_data.borrow_balance -= actual_debt_to_liquidate;
+           //borrower_data.borrow_balance -= actual_debt_to_liquidate;
            borrower_data.last_update_timestamp = Self::env().block_timestamp();
            self.env().emit_event(Liquidation {
             liquidator,
@@ -594,6 +542,91 @@ mod lendingpool {
             health_factor
         }
 
+        /**
+        * Get reserve data * total market supply * available liquidity 
+        * total lending * utilization rate 
+        **/
+        #[ink(message)]
+        pub fn get_reserve_data_ui(&self) -> (u128, u128, u128, u128){
+            let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+            let total_stoken: Balance = stoken.total_supply();
+            let total_dtoken: Balance = debttoken.total_supply();
+            let available_liquidity = total_stoken - total_dtoken;
+            //todo
+            let utilization_rate = total_dtoken * 1000_000_000 / total_stoken  * 100 ;
+            (total_stoken, available_liquidity, total_dtoken, utilization_rate)
+        }
+
+        /**
+        * liquidity_rate * borrow_rate * ltv * liquidity_threshold
+        * liquidity_bonus * decimals * last_updated_timestamp
+        **/
+        #[ink(message)]
+        pub fn get_reserve_data(&self) -> (u128, u128, u128, u128, u128, u128, u64){
+            return (
+                self.reserve.liquidity_rate, self.reserve.borrow_rate,
+                self.reserve.ltv, self.reserve.liquidity_threshold, 
+                self.reserve.liquidity_bonus, self.reserve.decimals, 
+                self.reserve.last_updated_timestamp
+            )
+        } 
+
+        /**
+        * Get user reserve data * total deposit * total borrow * deposit interest
+        * borrow interest *current timestamp 
+        **/        
+        #[ink(message)]
+        pub fn get_user_reserve_data_ui(&self, user: AccountId) -> (u128, u128, u128, u128, u64) {
+            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
+            let dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let user_stoken: Balance = stoken.balance_of(user);
+            let user_dtoken: Balance = dtoken.balance_of(user);
+            let interest = self.get_normalized_income() * user_stoken;
+            let debt_interest = self.get_normalized_debt()* user_dtoken;
+            let data = self.users_data.get(&user);
+            match data {
+                None => return (0, 0, 0, 0, 0),
+                Some(some_data) => {
+                    let cumulated_liquidity_interest = some_data.cumulated_liquidity_interest + interest;
+                    let cumulated_borrow_interest = some_data.cumulated_borrow_interest + debt_interest;
+                    let current_timestamp = Self::env().block_timestamp();
+                    return (user_stoken, cumulated_liquidity_interest, user_dtoken, cumulated_borrow_interest, current_timestamp);
+                },
+            }
+        }
+
+        //暂不开放
+        pub fn set_reserve_configuration(&mut self, ltv: u128, liquidity_threshold: u128, liquidity_bonus: u128){
+            self.reserve.ltv = ltv;
+            self.reserve.liquidity_threshold = liquidity_threshold;
+            self.reserve.liquidity_bonus = liquidity_bonus;
+        }
+        //暂不开放
+        pub fn set_interest_rate_data(
+            &mut self, optimal_utilization_rate:u128, 
+            rate_slope1: u128, rate_slope2:u128)
+            {
+                self.interest_setting.optimal_utilization_rate = optimal_utilization_rate;
+                self.interest_setting.rate_slope1 = rate_slope1;
+                self.interest_setting.rate_slope2 = rate_slope2;                
+        }
+        //暂不开放
+        pub fn set_kyc_data(&mut self, name: Option<String>, email: Option<String>) {
+            let user = self.env().caller();
+            let entry = self.users_kyc_data.entry(user);
+            let kyc_data = entry.or_insert(Default::default());
+            if let Some(user_name) = name {
+                kyc_data.name = user_name;
+            }
+            if let Some(user_email) = email {
+                kyc_data.email = user_email;
+            }         
+        }
+        //暂不开放
+        pub fn get_kyc_data(&self, user: AccountId) -> Option<UserKycData> {
+            self.users_kyc_data.get(&user).cloned()
+        }
         //暂不开放
         pub fn get_the_unhelthy_reserves(&self)-> Option<Vec<AccountId>>{
             let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
@@ -619,54 +652,6 @@ mod lendingpool {
                 Some(result)
             }
         } 
-
-         /**
-         * Get reserve data
-         * total market supply
-         * available liquidity
-         * total lending
-         * utilization rate 
-         **/
-        #[ink(message)]
-        pub fn get_reserve_data_ui(&self) -> (u128, u128, u128, u128){
-            let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
-            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
-            let total_stoken: Balance = stoken.total_supply();
-            let total_dtoken: Balance = debttoken.total_supply();
-            let available_liquidity = total_stoken - total_dtoken;
-            //result should divide by 1000000
-            let utilization_rate = total_dtoken * 1000000 / total_stoken  * 100 ;
-            (total_stoken, available_liquidity, total_dtoken, utilization_rate)
-        }
-
-         /**
-         * Get user reserve data
-         * total deposit
-         * total borrow
-         * deposit interest
-         * borrow interest
-         **/        
-        #[ink(message)]
-        pub fn get_user_reserve_data_ui(&self, user: AccountId) -> (u128, u128, u128, u128) {
-            let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
-            let dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
-
-            let user_stoken: Balance = stoken.balance_of(user);
-            let user_dtoken: Balance = dtoken.balance_of(user);
-            let interest = self.get_normalized_income() * user_stoken;
-            let debt_interest = self.get_normalized_debt()* user_dtoken;
-
-            let data = self.users_data.get(&user);
-
-            match data {
-                None => return (0, 0, 0, 0),
-                Some(some_data) => {
-                    let cumulated_liquidity_interest = some_data.cumulated_liquidity_interest + interest;
-                    let cumulated_borrow_interest = some_data.cumulated_borrow_interest + debt_interest;
-                    return (user_stoken, cumulated_liquidity_interest, user_dtoken, cumulated_borrow_interest);
-                },
-            }
-        }
 
     }
 }
