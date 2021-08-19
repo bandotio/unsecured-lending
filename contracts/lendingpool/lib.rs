@@ -118,7 +118,8 @@ mod lendingpool {
         delegate_allowance: StorageHashMap<(AccountId, AccountId), Balance>,
         users_kyc_data: StorageHashMap<AccountId, UserKycData>,
         interest_setting: InterestRateData,
-        users: StorageHashMap<AccountId,u8>, //accountid -> 1/0 
+        users: StorageHashMap<AccountId,u8>, //accountid -> 1/0
+        //borrow_status:StorageHashMap<(AccountId, AccountId), Balance>,
     }
 
     impl Lendingpool {  
@@ -346,7 +347,8 @@ mod lendingpool {
             balance_decrease_allowed(&mut self.reserve, receiver, amount);
 
             self.delegate_allowance.insert((receiver, sender), credit_balance - amount);
-            assert!(dtoken.mint(receiver, amount).is_ok());         
+            assert!(dtoken.mint(receiver, amount).is_ok());
+            //self.borrow_status.entry((sender,receiver)).and_modify(|old_value| *old_value+= amount).or_insert(amount);        
             self.env().transfer(sender, amount).expect("transfer failed");
             
             self.update_liquidity_index();
@@ -384,12 +386,14 @@ mod lendingpool {
                 reserve_data_sender.cumulated_borrow_interest += debt_interest;
             }
             if amount <= reserve_data_sender.cumulated_borrow_interest {
-                reserve_data_sender.cumulated_borrow_interest -= amount
+                reserve_data_sender.cumulated_borrow_interest -= amount;
+                
             } else {
                 let rest = amount - reserve_data_sender.cumulated_borrow_interest;
                 reserve_data_sender.cumulated_borrow_interest = 0;
                 //reserve_data_sender.borrow_balance -= amount;
                 dtoken.burn(recevier, rest).expect("debt token burn failed");
+                //self.borrow_status.entry((sender,recevier)).and_modify(|old_value| *old_value-= rest);
             }
             reserve_data_sender.last_update_timestamp = Self::env().block_timestamp();
             self.update_liquidity_index();
@@ -416,7 +420,7 @@ mod lendingpool {
          * @dev delgator can delegate some their own credits which get by deposit funds to delegatee
          * @param delegatee who can borrow without collateral
          * @param amount
-         */  
+         */ 
         #[ink(message)]
         pub fn delegate(&mut self, delegatee: AccountId, amount: Balance) {
             let delegator = self.env().caller();
@@ -428,26 +432,35 @@ mod lendingpool {
             self.delegate_allowance.get(&(delegator, delegatee)).copied().unwrap_or(0u128)
         }
 
+        //谁给我delegate了
+        //如果要开放这个函数
+        //建议改成直接由sender作为delegatee参数，不要自己填参数，这样只有自己能查自己的，别人不能查
         #[ink(message)]
-        pub fn delegate_from(&self, delegatee: AccountId) -> Vec<(AccountId, Balance)> {
-            let mut delegatees = vec![];
-            for v in self.delegate_allowance.iter() {
-                if v.0 .1 == delegatee {
-                    delegatees.push((v.0 .0, *v.1))
-                }
-            }
-            delegatees
-        }
-
-        #[ink(message)]
-        pub fn delegate_to(&self, delegator: AccountId) -> Vec<(AccountId, Balance)> {
+        pub fn delegate_from(&self) -> Vec<(AccountId, Balance)> {
+            let delegatee = self.env().caller();
             let mut delegators = vec![];
             for v in self.delegate_allowance.iter() {
-                if v.0 .0 == delegator {
+                if v.0 .1 == delegatee {
                     delegators.push((v.0 .0, *v.1))
                 }
             }
             delegators
+        }
+
+        //我给谁delegate了
+        //如果要开放这个函数
+        //建议改成直接由sender作为delegator参数，不要自己填参数，这样只有自己能查自己的，别人不能查
+        //查到的value是u128的，所以要做处理
+        #[ink(message)]
+        pub fn delegate_to(&self) -> Vec<(AccountId, Balance)> {
+            let delegator = self.env().caller();
+            let mut delegatees = vec![];
+            for v in self.delegate_allowance.iter() {
+                if v.0 .0 == delegator {
+                    delegatees.push((v.0 .1, *v.1))
+                }
+            }
+            delegatees
         }
 
         /**
