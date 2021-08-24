@@ -119,7 +119,7 @@ mod lendingpool {
         users_kyc_data: StorageHashMap<AccountId, UserKycData>,
         interest_setting: InterestRateData,
         users: StorageHashMap<AccountId,u8>, //accountid -> 1/0
-        //borrow_status:StorageHashMap<(AccountId, AccountId), Balance>,
+        borrow_status:StorageHashMap<(AccountId, AccountId), Balance>,
     }
 
     impl Lendingpool {  
@@ -150,6 +150,7 @@ mod lendingpool {
                     rate_slope2,
                 ),
                 users: Default::default(),
+                borrow_status: Default::default(),
             }
         }
 
@@ -348,7 +349,7 @@ mod lendingpool {
 
             self.delegate_allowance.insert((receiver, sender), credit_balance - amount);
             assert!(dtoken.mint(receiver, amount).is_ok());
-            //self.borrow_status.entry((sender,receiver)).and_modify(|old_value| *old_value+= amount).or_insert(amount);        
+            self.borrow_status.entry((sender,receiver)).and_modify(|old_value| *old_value+= amount).or_insert(amount);        
             self.env().transfer(sender, amount).expect("transfer failed");
             
             self.update_liquidity_index();
@@ -393,7 +394,8 @@ mod lendingpool {
                 reserve_data_sender.cumulated_borrow_interest = 0;
                 //reserve_data_sender.borrow_balance -= amount;
                 dtoken.burn(recevier, rest).expect("debt token burn failed");
-                //self.borrow_status.entry((sender,recevier)).and_modify(|old_value| *old_value-= rest);
+                //如果还钱少于借款利息 是看不到变化的
+                self.borrow_status.entry((sender,recevier)).and_modify(|old_value| *old_value-= rest);
             }
             reserve_data_sender.last_update_timestamp = Self::env().block_timestamp();
             self.update_liquidity_index();
