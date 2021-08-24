@@ -197,16 +197,16 @@ mod lendingpool {
         fn get_normalized_debt(&self) -> u128 {
             let timestamp = self.reserve.last_updated_timestamp; 
             if timestamp == self.env().block_timestamp() {
-                return ONE;
+                return 0;
             }
             let stable_borrow_rate = self.reserve.borrow_rate;
-            let cumulated = self.calculate_compounded_interest(stable_borrow_rate,timestamp) * ONE;
+            let cumulated = self.calculate_compounded_interest(stable_borrow_rate,timestamp);
             cumulated
         }
 
         fn caculate_linear_interest(&self, last_updated_timestamp: u64) -> u128 {
             let time_difference = self.env().block_timestamp() - last_updated_timestamp;
-            let interest:u128 = ONE * self.reserve.liquidity_rate * time_difference as u128 / ONE_YEAR + ONE;
+            let interest:u128 = self.reserve.liquidity_rate * time_difference as u128 / ONE_YEAR + ONE;
             interest
         }
 
@@ -214,7 +214,7 @@ mod lendingpool {
             let time_difference = self.env().block_timestamp() - last_update_timestamp;
             let time_difference = time_difference as u128;
             if time_difference == 0 {
-                return 1
+                return 0
             } 
             let time_difference_minus_one = time_difference - 1;
             let time_difference_minus_two = if time_difference > 2{

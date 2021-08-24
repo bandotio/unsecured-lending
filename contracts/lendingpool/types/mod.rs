@@ -207,7 +207,7 @@ pub fn calculate_interest_rates(
     let _available_liqudity = stoken.total_supply();
     let current_available_liqudity = _available_liqudity + liquidity_added - liquidity_taken;
     let current_borrow_rate;
-    let mut current_liquidity_rate = 0;
+    let mut current_liquidity_rate = reserve.liquidity_rate;
     let utilization_rate;
     if total_debt == 0 {
         utilization_rate = 0
