@@ -611,6 +611,18 @@ mod lendingpool {
             }
         }
 
+        #[ink(message)]
+        pub fn get_user_borrow_status(&self)-> Vec<(AccountId,Balance)>{
+            let sender = self.env().caller();
+            let mut result = Vec::new();
+            for ((borrower,owner),value) in self.borrow_status.iter(){
+                if *borrower == sender{
+                    result.push((*owner,*value));
+                }
+            }
+            result
+        }
+
         //暂不开放
         pub fn set_reserve_configuration(&mut self, ltv: u128, liquidity_threshold: u128, liquidity_bonus: u128){
             self.reserve.ltv = ltv;
