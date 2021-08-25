@@ -378,9 +378,9 @@ mod lendingpool {
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
 
-            let interest = self.get_normalized_income() * stoken.balance_of(sender) ;
-            let debt_interest = self.get_normalized_debt()* dtoken.balance_of(sender);
-            let reserve_data_sender = self.users_data.get_mut(&sender).expect("you have not borrow any dot");
+            let interest = self.get_normalized_income() * stoken.balance_of(recevier) ;
+            let debt_interest = self.get_normalized_debt()* dtoken.balance_of(recevier);
+            let reserve_data_sender = self.users_data.get_mut(&recevier).expect("you have not borrow any dot");
 
             if interest > 0 {
                 reserve_data_sender.cumulated_liquidity_interest += interest;
