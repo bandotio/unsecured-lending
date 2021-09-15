@@ -185,7 +185,13 @@ mod lendingpool {
             });
         }
 
-        fn get_normalized_income(&self) -> u128 {
+        #[ink(message)]
+        pub fn get_block_timestamp(&self) -> u64 {
+            self.env().block_timestamp()
+        }
+
+        #[ink(message)]
+        pub fn get_normalized_income(&self) -> u128 {
             let timestamp = self.reserve.last_updated_timestamp; 
             if timestamp == self.env().block_timestamp() {
                 return self.reserve.liquidity_index
@@ -194,7 +200,8 @@ mod lendingpool {
             cumulated
         }
 
-        fn get_normalized_debt(&self) -> u128 {
+        #[ink(message)]
+        pub fn get_normalized_debt(&self) -> u128 {
             let timestamp = self.reserve.last_updated_timestamp; 
             if timestamp == self.env().block_timestamp() {
                 return 0;
@@ -203,14 +210,16 @@ mod lendingpool {
             let cumulated = self.calculate_compounded_interest(stable_borrow_rate,timestamp);
             cumulated
         }
-
-        fn caculate_linear_interest(&self, last_updated_timestamp: u64) -> u128 {
+        
+        #[ink(message)]
+        pub fn caculate_linear_interest(&self, last_updated_timestamp: u64) -> u128 {
             let time_difference = self.env().block_timestamp() - last_updated_timestamp;
             let interest:u128 = self.reserve.liquidity_rate * time_difference as u128 / ONE_YEAR + ONE;
             interest
         }
 
-        fn calculate_compounded_interest(&self, rate:u128, last_update_timestamp:u64) -> u128{
+        #[ink(message)]
+        pub fn calculate_compounded_interest(&self, rate:u128, last_update_timestamp:u64) -> u128{
             let time_difference = self.env().block_timestamp() - last_update_timestamp;
             let time_difference = time_difference as u128;
             if time_difference == 0 {
