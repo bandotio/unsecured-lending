@@ -196,7 +196,7 @@ mod lendingpool {
             if timestamp == self.env().block_timestamp() {
                 return self.reserve.liquidity_index
             }
-            let cumulated = self.caculate_linear_interest(timestamp) * &self.reserve.liquidity_index;
+            let cumulated = self.caculate_linear_interest(timestamp) * &self.reserve.liquidity_index / 1_000_000_000_000;
             cumulated
         }
 
@@ -231,9 +231,10 @@ mod lendingpool {
             } else {
                 0
             };
+            //rate =18 * 10_000_000_000
             let rate_per_second = rate / ONE_YEAR;
-            let base_power_two = rate_per_second * rate_per_second;
-            let base_power_three = base_power_two * rate_per_second;
+            let base_power_two = rate_per_second * rate_per_second /10_000_000_000;
+            let base_power_three = base_power_two * rate_per_second/10_000_000_000;
             let second_term = time_difference * time_difference_minus_one * base_power_two / 2;
             let third_term = time_difference * time_difference_minus_one * time_difference_minus_two * base_power_three / 6;
             let interest = rate_per_second * time_difference + 1 + second_term + third_term;
@@ -244,7 +245,7 @@ mod lendingpool {
             let current_liquidity_rate = self.reserve.liquidity_rate;
             if current_liquidity_rate > 0 {
                 let cumulated_liquidity_interest = self.caculate_linear_interest(self.reserve.last_updated_timestamp);
-                self.reserve.liquidity_index = self.reserve.liquidity_index * cumulated_liquidity_interest;
+                self.reserve.liquidity_index = self.reserve.liquidity_index / 1_000_000_000_000 * cumulated_liquidity_interest;
                 self.reserve.last_updated_timestamp = self.env().block_timestamp();
             }
         }
@@ -276,13 +277,13 @@ mod lendingpool {
             }
             let mut stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
-
-            let interest = self.get_normalized_income() * stoken.balance_of(sender) ;
+            //需要处理这里的精度问题
+            let interest = self.get_normalized_income() /  ONE * stoken.balance_of(sender) ;
             let debt_interest = self.get_normalized_debt()* debttoken.balance_of(sender);
             let reserve_data = self.users_data.get_mut(&sender).expect("user config does not exist");
 
             if interest > 0 {
-                reserve_data.cumulated_liquidity_interest += interest;
+                reserve_data.cumulated_liquidity_interest  += interest ;
                 reserve_data.cumulated_borrow_interest += debt_interest;
             }            
             let available_user_balance = stoken.balance_of(sender)  - debttoken.balance_of(sender) + reserve_data.cumulated_liquidity_interest - reserve_data.cumulated_borrow_interest;
@@ -338,7 +339,7 @@ mod lendingpool {
                 "{}",
                 VL_NOT_ENOUGH_AVAILABLE_USER_BALANCE
             );       
-            let interest = self.get_normalized_income() * stoken.balance_of(receiver) ;
+            let interest = self.get_normalized_income() /ONE * stoken.balance_of(receiver) ;
             let debt_interest = self.get_normalized_debt()* dtoken.balance_of(receiver);
             let reserve_data = self.users_data.get_mut(&receiver).expect("user config does not exist");
             if interest > 0 {
@@ -387,7 +388,7 @@ mod lendingpool {
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
 
-            let interest = self.get_normalized_income() * stoken.balance_of(recevier) ;
+            let interest = self.get_normalized_income() / (ONE *ONE) * stoken.balance_of(recevier) ;
             let debt_interest = self.get_normalized_debt()* dtoken.balance_of(recevier);
             let reserve_data_sender = self.users_data.get_mut(&recevier).expect("you have not borrow any dot");
 
@@ -606,7 +607,7 @@ mod lendingpool {
             let dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
             let user_stoken: Balance = stoken.balance_of(user);
             let user_dtoken: Balance = dtoken.balance_of(user);
-            let interest = self.get_normalized_income() * user_stoken;
+            let interest = self.get_normalized_income() / ONE * user_stoken;
             let debt_interest = self.get_normalized_debt()* user_dtoken;
             let data = self.users_data.get(&user);
             match data {
