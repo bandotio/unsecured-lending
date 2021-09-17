@@ -196,7 +196,7 @@ mod lendingpool {
             if timestamp == self.env().block_timestamp() {
                 return self.reserve.liquidity_index
             }
-            let cumulated = self.caculate_linear_interest(timestamp) * &self.reserve.liquidity_index / 1_000_000_000_000;
+            let cumulated = self.caculate_linear_interest(timestamp) * &self.reserve.liquidity_index / ONE;
             cumulated
         }
 
@@ -233,8 +233,8 @@ mod lendingpool {
             };
             //rate =18 * 10_000_000_000
             let rate_per_second = rate / ONE_YEAR;
-            let base_power_two = rate_per_second * rate_per_second /10_000_000_000;
-            let base_power_three = base_power_two * rate_per_second/10_000_000_000;
+            let base_power_two = rate_per_second * rate_per_second / ONE_PERCENTAGE;
+            let base_power_three = base_power_two * rate_per_second / ONE_PERCENTAGE;
             let second_term = time_difference * time_difference_minus_one * base_power_two / 2;
             let third_term = time_difference * time_difference_minus_one * time_difference_minus_two * base_power_three / 6;
             let interest = rate_per_second * time_difference + 1 + second_term + third_term;
@@ -245,7 +245,7 @@ mod lendingpool {
             let current_liquidity_rate = self.reserve.liquidity_rate;
             if current_liquidity_rate > 0 {
                 let cumulated_liquidity_interest = self.caculate_linear_interest(self.reserve.last_updated_timestamp);
-                self.reserve.liquidity_index = self.reserve.liquidity_index / 1_000_000_000_000 * cumulated_liquidity_interest;
+                self.reserve.liquidity_index = self.reserve.liquidity_index / ONE * cumulated_liquidity_interest;
                 self.reserve.last_updated_timestamp = self.env().block_timestamp();
             }
         }
