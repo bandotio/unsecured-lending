@@ -170,8 +170,9 @@ mod lendingpool {
             }
             let amount = self.env().transferred_balance();
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
-            self.update_liquidity_index();
-            self.update_interest_rates(amount, 0);
+
+            self.update_pool_state(amount, 0);
+
             let mut stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let entry = self.users_data.entry(receiver);
             let user_reserve_data = entry.or_insert(Default::default());
@@ -240,20 +241,19 @@ mod lendingpool {
             let interest = rate_per_second * time_difference + 1 + second_term + third_term;
             interest
         }
-        
-        fn update_liquidity_index(&mut self){
-            let current_liquidity_rate = self.reserve.liquidity_rate;
-            if current_liquidity_rate > 0 {
-                let cumulated_liquidity_interest = self.caculate_linear_interest(self.reserve.last_updated_timestamp);
-                self.reserve.liquidity_index = self.reserve.liquidity_index / ONE * cumulated_liquidity_interest;
-                self.reserve.last_updated_timestamp = self.env().block_timestamp();
-            }
-        }
 
-        fn update_interest_rates(&mut self, liquidity_added: u128, liquidity_taken: u128) {
+        fn update_pool_state(&mut self, liquidity_added: u128, liquidity_taken: u128) {
+            let current_liquidity_rate = self.reserve.liquidity_rate;
+            let mut cumulated_liquidity_interest = 0;
+            if current_liquidity_rate > 0 {
+                cumulated_liquidity_interest = self.caculate_linear_interest(self.reserve.last_updated_timestamp);
+            }
             let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
             let total_debt = debttoken.total_supply();
             let (new_liquidity_rate, new_borrow_rate, utilization_rate) = calculate_interest_rates(&self.reserve, &self.interest_setting, liquidity_added, liquidity_taken, total_debt, self.reserve.borrow_rate);
+            
+            self.reserve.liquidity_index = self.reserve.liquidity_index / ONE * cumulated_liquidity_interest;
+            self.reserve.last_updated_timestamp = self.env().block_timestamp();
             self.reserve.liquidity_rate = new_liquidity_rate;
             self.reserve.borrow_rate = new_borrow_rate;
             self.interest_setting.utilization_rate = utilization_rate;
@@ -312,8 +312,9 @@ mod lendingpool {
                 stoken.burn(sender, rest).expect("sToken burn failed");
             }
             reserve_data.last_update_timestamp = Self::env().block_timestamp();
-            self.update_liquidity_index();
-            self.update_interest_rates(0, amount);
+
+            self.update_pool_state(0, amount);
+
             self.env().transfer(receiver, amount).expect("transfer failed"); 
             self.env().emit_event(Withdraw {
                 user: sender,
@@ -369,9 +370,9 @@ mod lendingpool {
             assert!(dtoken.mint(receiver, amount).is_ok());
             self.borrow_status.entry((sender,receiver)).and_modify(|old_value| *old_value+= amount).or_insert(amount);        
             self.env().transfer(sender, amount).expect("transfer failed");
-            
-            self.update_liquidity_index();
-            self.update_interest_rates(0, amount);
+
+            self.update_pool_state(0, amount);
+
             self.env().emit_event(Borrow {
                 user: sender,
                 on_behalf_of,
@@ -416,8 +417,9 @@ mod lendingpool {
                 self.borrow_status.entry((sender,recevier)).and_modify(|old_value| *old_value-= rest);
             }
             reserve_data_sender.last_update_timestamp = Self::env().block_timestamp();
-            self.update_liquidity_index();
-            self.update_interest_rates(amount,0);
+            
+            self.update_pool_state(amount,0);
+
             self.env().emit_event(Repay {
                 receiver: on_behalf_of,
                 repayer: sender,
@@ -534,14 +536,15 @@ mod lendingpool {
                     LPCM_NOT_ENOUGH_LIQUIDITY_TO_LIQUIDATE
                 );
             } 
-            self.update_liquidity_index();
            debttoken.burn(borrower, actual_debt_to_liquidate).expect("debt token burn failed");
-           self.update_interest_rates(actual_debt_to_liquidate,0);
+
+           self.update_pool_state(actual_debt_to_liquidate,0);
+
            if receive_s_token{
                stoken.transfer_from(borrower, liquidator, max_collateral_to_liquidate).expect("transfer stoken failed");                   
            } else {
-            self.update_liquidity_index();
-            self.update_interest_rates(0,max_collateral_to_liquidate);
+            self.update_pool_state(0, max_collateral_to_liquidate);
+
             stoken.burn(borrower, max_collateral_to_liquidate).expect("stoken burn failed");
             //transfer max_collateral_to_liquidate dot back to liqudator
             self.env().transfer(liquidator, max_collateral_to_liquidate).expect("transfer failed");
