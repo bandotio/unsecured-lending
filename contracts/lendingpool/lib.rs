@@ -253,9 +253,17 @@ mod lendingpool {
         fn update_interest_rates(&mut self, liquidity_added: u128, liquidity_taken: u128) {
             let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
             let total_debt = debttoken.total_supply();
-            let (new_liquidity_rate, new_borrow_rate) = calculate_interest_rates(&self.reserve, &mut self.interest_setting, liquidity_added, liquidity_taken, total_debt, self.reserve.borrow_rate);
+            let (new_liquidity_rate, new_borrow_rate, utilization_rate) = calculate_interest_rates(&self.reserve, &self.interest_setting, liquidity_added, liquidity_taken, total_debt, self.reserve.borrow_rate);
             self.reserve.liquidity_rate = new_liquidity_rate;
             self.reserve.borrow_rate = new_borrow_rate;
+            self.interest_setting.utilization_rate = utilization_rate;
+        }
+
+        #[ink(message)]
+        pub fn get_new_reserve_rates(&self, liquidity_added: u128, liquidity_taken: u128) -> (u128, u128, u128) {
+            let debttoken: IERC20 =  FromAccountId::from_account_id(self.reserve.debt_token_address);
+            let total_debt = debttoken.total_supply();
+            calculate_interest_rates(&self.reserve, &self.interest_setting, liquidity_added, liquidity_taken, total_debt, self.reserve.borrow_rate)
         }
 
         /**

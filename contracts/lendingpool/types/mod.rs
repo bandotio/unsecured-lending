@@ -197,12 +197,12 @@ pub fn caculate_available_collateral_to_liquidate(vars:&ReserveData, debt_to_cov
 **/
 pub fn calculate_interest_rates(
     reserve:&ReserveData,
-    vars:&mut InterestRateData,
+    vars:&InterestRateData,
     liquidity_added:u128,
     liquidity_taken:u128,
     total_debt:u128,
     borrow_rate:u128
-) -> (u128, u128) {
+) -> (u128, u128, u128) {
     let stoken: IERC20 = FromAccountId::from_account_id(reserve.stoken_address);
     let _available_liqudity = stoken.total_supply();
     let current_available_liqudity = _available_liqudity + liquidity_added - liquidity_taken;
@@ -227,6 +227,5 @@ pub fn calculate_interest_rates(
     else{
         current_liquidity_rate = 0;
     }
-    vars.utilization_rate = utilization_rate;
-    (current_liquidity_rate, current_borrow_rate)
+    (current_liquidity_rate, current_borrow_rate, utilization_rate)
 }
