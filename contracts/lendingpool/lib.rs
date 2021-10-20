@@ -304,15 +304,15 @@ mod lendingpool {
             let mut stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let debttoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
             //需要处理这里的精度问题
-            let interest = self.get_normalized_income(self.reserve.last_updated_timestamp) /  ONE * stoken.balance_of(sender) ;
-            let debt_interest = self.get_normalized_debt(self.reserve.last_updated_timestamp)/ ONE_PERCENTAGE * debttoken.balance_of(sender);
+            let interest = self.get_normalized_income(self.reserve.last_updated_timestamp) /  ONE * stoken.balance_of(sender) / ONE ;
+            let debt_interest = self.get_normalized_debt(self.reserve.last_updated_timestamp)/ ONE_PERCENTAGE * debttoken.balance_of(sender)/ONE;
             let reserve_data = self.users_data.get_mut(&sender).expect("user config does not exist");
 
             if interest > 0 {
                 reserve_data.cumulated_liquidity_interest  += interest ;
                 reserve_data.cumulated_borrow_interest += debt_interest;
             }            
-            let available_user_balance = stoken.balance_of(sender)  - debttoken.balance_of(sender) + reserve_data.cumulated_liquidity_interest - reserve_data.cumulated_borrow_interest;
+            let available_user_balance = stoken.balance_of(sender) /ONE  - debttoken.balance_of(sender)/ONE  + reserve_data.cumulated_liquidity_interest + reserve_data.cumulated_borrow_interest;
             assert!(
                 amount <= available_user_balance,
                 "{}",
@@ -366,14 +366,14 @@ mod lendingpool {
                 "{}",
                 VL_NOT_ENOUGH_AVAILABLE_USER_BALANCE
             );       
-            let interest = self.get_normalized_income(self.reserve.last_updated_timestamp) /ONE * stoken.balance_of(receiver) ;
-            let debt_interest = self.get_normalized_debt(self.reserve.last_updated_timestamp) / ONE_PERCENTAGE * dtoken.balance_of(receiver);
+            let interest = self.get_normalized_income(self.reserve.last_updated_timestamp) /ONE * stoken.balance_of(receiver)/ONE ;
+            let debt_interest = self.get_normalized_debt(self.reserve.last_updated_timestamp) / ONE_PERCENTAGE * dtoken.balance_of(receiver)/ONE;
             let reserve_data = self.users_data.get_mut(&receiver).expect("user config does not exist");
             if interest > 0 {
                 reserve_data.cumulated_liquidity_interest += interest;
                 reserve_data.cumulated_borrow_interest += debt_interest;
             }        
-            let _credit_balance = stoken.balance_of(receiver)  - dtoken.balance_of(receiver) + reserve_data.cumulated_liquidity_interest / ONE - reserve_data.cumulated_borrow_interest / ONE_PERCENTAGE;
+            let _credit_balance = stoken.balance_of(receiver) /ONE - dtoken.balance_of(receiver)/ONE + reserve_data.cumulated_liquidity_interest  - reserve_data.cumulated_borrow_interest ;
             assert!(
                 amount <= _credit_balance, 
                 "{}",
@@ -415,8 +415,8 @@ mod lendingpool {
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
 
-            let interest = self.get_normalized_income(self.reserve.last_updated_timestamp) / ONE * stoken.balance_of(recevier) ;
-            let debt_interest = self.get_normalized_debt(self.reserve.last_updated_timestamp) / ONE_PERCENTAGE * dtoken.balance_of(recevier);
+            let interest = self.get_normalized_income(self.reserve.last_updated_timestamp) / ONE * stoken.balance_of(recevier)/ ONE ;
+            let debt_interest = self.get_normalized_debt(self.reserve.last_updated_timestamp) / ONE_PERCENTAGE * dtoken.balance_of(recevier)/ ONE;
             let reserve_data_sender = self.users_data.get_mut(&recevier).expect("you have not borrow any dot");
 
             if interest > 0 {
@@ -525,8 +525,8 @@ mod lendingpool {
             let mut oracle: Price = FromAccountId::from_account_id(self.reserve.oracle_price_address);
             oracle.update().expect("Failed to update price");
             let unit_price = oracle.get();
-            let borrower_total_debt_in_usd = debttoken.balance_of(borrower) * unit_price; 
-            let borrower_total_balance_in_usd = stoken.balance_of(borrower) * unit_price;
+            let borrower_total_debt_in_usd = debttoken.balance_of(borrower) / ONE* unit_price; 
+            let borrower_total_balance_in_usd = stoken.balance_of(borrower)/ ONE * unit_price;
             let health_factor = calculate_health_factor_from_balance(borrower_total_balance_in_usd, borrower_total_debt_in_usd, self.reserve.liquidity_threshold);
             assert!(
                 health_factor <= HEALTH_FACTOR_LIQUIDATION_THRESHOLD, 
@@ -546,7 +546,7 @@ mod lendingpool {
                 actual_debt_to_liquidate = debt_to_cover
             }
             //最后一个参数
-            let (max_collateral_to_liquidate, debt_amount_needed) = caculate_available_collateral_to_liquidate(&self.reserve, actual_debt_to_liquidate, stoken.balance_of(borrower));
+            let (max_collateral_to_liquidate, debt_amount_needed) = caculate_available_collateral_to_liquidate(&self.reserve, actual_debt_to_liquidate, stoken.balance_of(borrower)/ ONE);
             if debt_amount_needed < actual_debt_to_liquidate {
                 actual_debt_to_liquidate = debt_amount_needed;
             }
@@ -594,8 +594,8 @@ mod lendingpool {
             if !self.users_data.get(&user).is_some(){
                 return 0;
             };
-            let _total_collateral_in_usd = unit_price * stoken.balance_of(user);
-            let _total_debt_in_usd = unit_price * debttoken.balance_of(user);
+            let _total_collateral_in_usd = unit_price * stoken.balance_of(user)/ ONE;
+            let _total_debt_in_usd = unit_price * debttoken.balance_of(user)/ ONE;
             let health_factor = calculate_health_factor_from_balance(_total_collateral_in_usd, _total_debt_in_usd, self.reserve.liquidity_threshold);
             health_factor
         }
@@ -646,8 +646,9 @@ mod lendingpool {
         pub fn get_user_reserve_data_ui(&self, user: AccountId) -> (u128, u128, u128, u128, u64) {
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
-            let user_stoken: Balance = stoken.balance_of(user);
-            let user_dtoken: Balance = dtoken.balance_of(user);
+            //带有12个0的精度
+            let user_stoken: Balance = stoken.balance_of(user)/ ONE;
+            let user_dtoken: Balance = dtoken.balance_of(user)/ ONE;
             let interest = self.get_normalized_income(self.reserve.last_updated_timestamp) / ONE * user_stoken;
             let debt_interest = self.get_normalized_debt(self.reserve.last_updated_timestamp) /ONE_PERCENTAGE * user_dtoken;
             let data = self.users_data.get(&user);
@@ -719,8 +720,8 @@ mod lendingpool {
                     //1表示这个用户有钱存在池子里 是我们的用户，0表示用户把所有钱都取走了，相当于不是我们的用户了
                     continue
                 }
-                let _total_collateral_in_usd = unit_price * stoken.balance_of(*user);
-                let _total_debt_in_usd = unit_price * debttoken.balance_of(*user);
+                let _total_collateral_in_usd = unit_price * stoken.balance_of(*user)/ ONE;
+                let _total_debt_in_usd = unit_price * debttoken.balance_of(*user)/ ONE;
                 if calculate_health_factor_from_balance(_total_collateral_in_usd, _total_debt_in_usd, self.reserve.liquidity_threshold) <HEALTH_FACTOR_LIQUIDATION_THRESHOLD {
                     result.push(*user)
                 }

@@ -5,15 +5,15 @@ authors = ["Bandot"]
 edition = "2018"
 
 [dependencies]
-ink_primitives = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false }
-ink_metadata = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false, features = ["derive"], optional = true }
-ink_env = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false }
-ink_storage = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false }
-ink_lang = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false }
-ink_prelude = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false }
+ink_primitives = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false,rev ="fd94d38" }
+ink_metadata = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false, features = ["derive"], optional = true ,rev ="fd94d38"}
+ink_env = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false,rev ="fd94d38" }
+ink_storage = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false ,rev ="fd94d38"}
+ink_lang = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false,rev ="fd94d38" }
+ink_prelude = { version = "3.0.0-rc3", git = "https://github.com/paritytech/ink", default-features = false ,rev ="fd94d38"}
 
 scale = { package = "parity-scale-codec", version = "2.0", default-features = false, features = ["derive"] }
-scale-info = { version = "0.6", default-features = false, features = ["derive"], optional = true }
+scale-info = { version = "0.6.0", default-features = false, features = ["derive"], optional = true }
 
 funty = "=1.1"
 
