@@ -113,13 +113,14 @@ mod lendingpool {
 
     #[ink(storage)]
     pub struct Lendingpool {
-        reserve: ReserveData,
-        users_data: StorageHashMap<AccountId, UserReserveData>,
-        delegate_allowance: StorageHashMap<(AccountId, AccountId), Balance>,
+        pub reserve: ReserveData,
+        pub users_data: StorageHashMap<AccountId, UserReserveData>,
+        pub delegate_allowance: StorageHashMap<(AccountId, AccountId), Balance>,
         users_kyc_data: StorageHashMap<AccountId, UserKycData>,
-        interest_setting: InterestRateData,
+        pub interest_setting: InterestRateData,
         users: StorageHashMap<AccountId,u8>, //accountid -> 1/0
-        borrow_status:StorageHashMap<(AccountId, AccountId), Balance>,
+        pub borrow_status:StorageHashMap<(AccountId, AccountId), Balance>,
+        pub paratest:Balance,
     }
 
     impl Lendingpool {  
@@ -151,6 +152,7 @@ mod lendingpool {
                 ),
                 users: Default::default(),
                 borrow_status: Default::default(),
+                paratest: Default::default()
             }
             
         }
@@ -314,18 +316,18 @@ mod lendingpool {
             }            
             let available_user_balance = stoken.balance_of(sender) /ONE  - debttoken.balance_of(sender)/ONE  + reserve_data.cumulated_liquidity_interest + reserve_data.cumulated_borrow_interest;
             assert!(
-                amount <= available_user_balance,
+                amount/ONE <= available_user_balance,
                 "{}",
                 VL_NOT_ENOUGH_AVAILABLE_USER_BALANCE
             );
-            assert!(balance_decrease_allowed(&mut self.reserve, sender, amount),
-                "{}",
-                VL_TRANSFER_NOT_ALLOWED
-            );
-            if amount <= reserve_data.cumulated_liquidity_interest {
-                reserve_data.cumulated_liquidity_interest -= amount;
+            //assert!(balance_decrease_allowed(&mut self.reserve, sender, amount),
+                //"{}",
+                //VL_TRANSFER_NOT_ALLOWED
+            //);
+            if amount/ONE <= reserve_data.cumulated_liquidity_interest {
+                reserve_data.cumulated_liquidity_interest -= amount/ONE;
             } else {
-                let rest = amount - reserve_data.cumulated_liquidity_interest;
+                let rest = amount/ONE - reserve_data.cumulated_liquidity_interest;
                 reserve_data.cumulated_liquidity_interest = 0;
                 stoken.burn(sender, rest).expect("sToken burn failed");
             }
@@ -355,10 +357,12 @@ mod lendingpool {
         #[ink(message)]
         pub fn borrow(&mut self, amount: Balance, on_behalf_of: AccountId) {
             assert_ne!(amount, 0, "{}", VL_INVALID_AMOUNT);
+            self.paratest =amount;
             let sender = self.env().caller();
             let receiver = on_behalf_of;
             let stoken: IERC20 = FromAccountId::from_account_id(self.reserve.stoken_address);
             let mut dtoken: IERC20 = FromAccountId::from_account_id(self.reserve.debt_token_address);
+            //amonut 和 credit_balance都有精度
             let credit_balance = self.delegate_allowance.get(&(receiver, sender)).copied().unwrap_or(0);
             //在单币种的模式下，只考虑A用户授权给B，B来借款，不然这条assert需要有条件判断
             assert!(
@@ -375,7 +379,8 @@ mod lendingpool {
             }        
             let _credit_balance = stoken.balance_of(receiver) /ONE - dtoken.balance_of(receiver)/ONE + reserve_data.cumulated_liquidity_interest  - reserve_data.cumulated_borrow_interest ;
             assert!(
-                amount <= _credit_balance, 
+                //不知道是不是因为amount进来被加上了精度，有可能是这里的判断失败了，因为_credit_balance的精度已经被处理掉了，所以这里的amount要是自己动被加上精度了肯定会失败的
+                amount/ ONE <= _credit_balance, 
                 "{}",
                 VL_NOT_ENOUGH_AVAILABLE_USER_BALANCE
             );
@@ -397,6 +402,7 @@ mod lendingpool {
                 amount,
             });
         }
+        
 
         /**
         * @notice Repays a borrowed `amount` on a specific reserve, burning the equivalent debt tokens owned
@@ -423,14 +429,14 @@ mod lendingpool {
                 reserve_data_sender.cumulated_liquidity_interest += interest;
                 reserve_data_sender.cumulated_borrow_interest += debt_interest;
             }
-            if amount <= reserve_data_sender.cumulated_borrow_interest {
-                reserve_data_sender.cumulated_borrow_interest -= amount;
+            if amount/ONE <= reserve_data_sender.cumulated_borrow_interest {
+                reserve_data_sender.cumulated_borrow_interest -= amount/ONE;
                 
             } else {
-                let rest = amount - reserve_data_sender.cumulated_borrow_interest;
+                let rest = amount/ONE - reserve_data_sender.cumulated_borrow_interest;
                 reserve_data_sender.cumulated_borrow_interest = 0;
                 //reserve_data_sender.borrow_balance -= amount;
-                dtoken.burn(recevier, rest).expect("debt token burn failed");
+                dtoken.burn(recevier, rest*ONE).expect("debt token burn failed");
                 //如果还钱少于借款利息 是看不到变化的
                 self.borrow_status.entry((sender,recevier)).and_modify(|old_value| *old_value-= rest);
             }
