@@ -329,7 +329,7 @@ mod lendingpool {
             } else {
                 let rest = amount/ONE - reserve_data.cumulated_liquidity_interest;
                 reserve_data.cumulated_liquidity_interest = 0;
-                stoken.burn(sender, rest).expect("sToken burn failed");
+                stoken.burn(sender, rest*ONE).expect("sToken burn failed");
             }
             reserve_data.last_update_timestamp = Self::env().block_timestamp();
 
