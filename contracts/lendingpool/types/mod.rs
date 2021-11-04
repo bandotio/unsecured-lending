@@ -20,6 +20,7 @@ pub const HEALTH_FACTOR_LIQUIDATION_THRESHOLD: u128 = ONE;
 pub const BASE_LIQUIDITY_RATE: u128 = 10 * ONE_PERCENTAGE; // 10% 
 pub const BASE_BORROW_RATE: u128 = 18 * ONE_PERCENTAGE; // 18%
 pub const BASE_LIQUIDITY_INDEX: u128 = ONE; // 1
+pub const BASE_BORROW_INDEX: u128 = ONE; // 1
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, scale::Encode, scale::Decode, SpreadLayout, PackedLayout)]
 #[cfg_attr(feature = "std",derive(scale_info::TypeInfo, ink_storage::traits::StorageLayout))]
@@ -35,6 +36,7 @@ pub struct ReserveData {
     pub decimals: u128,
     pub liquidity_index: u128,
     pub last_updated_timestamp: u64,
+    pub borrow_index: u128,
 }
 
 impl ReserveData {
@@ -57,6 +59,7 @@ impl ReserveData {
             liquidity_bonus: liquidity_bonus * ONE_PERCENTAGE,
             decimals: 12,
             liquidity_index: BASE_LIQUIDITY_INDEX,
+            borrow_index:BASE_BORROW_INDEX,
             last_updated_timestamp: Default::default(),
         }
     }
@@ -204,7 +207,8 @@ pub fn calculate_interest_rates(
     borrow_rate:u128
 ) -> (u128, u128, u128) {
     let stoken: IERC20 = FromAccountId::from_account_id(reserve.stoken_address);
-    let _available_liqudity = stoken.total_supply();
+    let total_debt = total_debt/ONE;
+    let _available_liqudity = stoken.total_supply()/ONE;
     let current_available_liqudity = _available_liqudity + liquidity_added - liquidity_taken;
     let current_borrow_rate;
     let mut current_liquidity_rate = reserve.liquidity_rate;
@@ -212,7 +216,7 @@ pub fn calculate_interest_rates(
     if total_debt == 0 {
         utilization_rate = 0
     } else {
-        utilization_rate = (total_debt * 1000_000_000_000+ (current_available_liqudity + total_debt) /2) / (current_available_liqudity + total_debt)
+        utilization_rate = total_debt  * 100/ (current_available_liqudity + total_debt)
     }
     if utilization_rate > vars.optimal_utilization_rate{
         let excess_utilization_rate_ratio = utilization_rate - vars.optimal_utilization_rate / vars.excess_utilization_rate;
@@ -222,10 +226,10 @@ pub fn calculate_interest_rates(
     }
     if total_debt != 0 {
         
-        current_liquidity_rate = borrow_rate  * utilization_rate;
+        current_liquidity_rate = (borrow_rate  * utilization_rate) /100;
     }
     else{
         current_liquidity_rate = 0;
     }
-    (current_liquidity_rate / 1000_000_000_000, current_borrow_rate, utilization_rate)
+    (current_liquidity_rate, current_borrow_rate, utilization_rate)
 }
